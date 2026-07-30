@@ -230,7 +230,10 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             + "".join(rows) + "</table>"
         ) if rows else '<div class="empty">Geen open posities op dit moment.</div>'
 
-        closed = controller.db.fetch_closed_trades()[:10]
+        closed = [
+            r for r in controller.db.fetch_closed_trades()
+            if r["exit_reason"] != "reconciliation_broker_missing"
+        ][:10]
         trade_rows = []
         for row in closed:
             pnl = row["pnl"] or 0.0

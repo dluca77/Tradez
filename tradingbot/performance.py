@@ -5,6 +5,17 @@ from dataclasses import dataclass
 
 from tradingbot.database import Database
 
+# Trades auto-closed by the recovery/reconciliation service (e.g. because the
+# broker/session was restarted mid-trade and the position no longer exists at
+# the broker) are not real trading outcomes — they're bookkeeping artifacts
+# with a forced pnl of 0. Counting them would dilute the win rate and let
+# restarts silently pad the trade count needed for the live-trading gate.
+_ARTIFACT_EXIT_REASONS = {"reconciliation_broker_missing"}
+
+
+def _real_trades(rows):
+    return [r for r in rows if r["exit_reason"] not in _ARTIFACT_EXIT_REASONS]
+
 
 @dataclass
 class PerformanceSummary:
@@ -34,7 +45,7 @@ def _bucket_stats(rows, key: str) -> dict[str, dict]:
 
 
 def compute_performance(db: Database) -> PerformanceSummary:
-    rows = db.fetch_closed_trades()
+    rows = _real_trades(db.fetch_closed_trades())
     if not rows:
         return PerformanceSummary(0, 0.0, 0.0, 0.0, 0.0, {}, {})
 
@@ -56,7 +67,7 @@ def compute_performance(db: Database) -> PerformanceSummary:
 
 
 def historical_winrates(db: Database) -> dict[str, float]:
-    rows = db.fetch_closed_trades()
+    rows = _real_trades(db.fetch_closed_trades())
     buckets: dict[str, list] = {}
     for row in rows:
         key = f"{row['instrument']}:{row['strategy']}"
