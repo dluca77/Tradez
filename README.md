@@ -155,12 +155,20 @@ bar-by-bar with no look-ahead and applies spread/commission/slippage costs.
 
 ## Live trading
 
-A real broker adapter now exists: `tradingbot/broker/oanda.py`, built only
-against OANDA's official v20 REST API (credentials from `.env`, never
-hardcoded). MT5 and IBKR adapters are stubbed in
-`tradingbot/broker/factory.py` — implement `tradingbot/broker/mt5.py` /
-`tradingbot/broker/ibkr.py` against `BrokerInterface` and register them
-there when needed.
+Two real broker adapters now exist:
+
+- `tradingbot/broker/oanda.py` — OANDA's official v20 REST API.
+- `tradingbot/broker/mt5.py` — the official `MetaTrader5` Python package.
+  **Note:** this package only works where an actual MT5 terminal can run
+  (natively on Windows, or via Wine elsewhere) — it cannot be imported on a
+  plain Linux server without one. The adapter defers the import until
+  instantiated and fails with a clear error if unavailable, so the rest of
+  the bot and its test suite are unaffected on any platform.
+
+Both read credentials only from `.env`, never hardcoded. IBKR is stubbed in
+`tradingbot/broker/factory.py` — implement `tradingbot/broker/ibkr.py`
+against `BrokerInterface` (e.g. via `ib_insync`) and register it there when
+needed.
 
 **Live trading cannot start without passing `tradingbot/live_gate.py`.**
 `run_live.py` calls it before doing anything else and refuses to place a
@@ -212,6 +220,7 @@ tradingbot/
   data_loader.py                         historical data (CSV / yfinance)
   live_gate.py                            live-trading activation gate
   broker/oanda.py                          OANDA live broker adapter
+  broker/mt5.py                             MetaTrader 5 live broker adapter
   broker/factory.py                         broker selection from config
 tests/                                   unit tests
 run_paper.py                              paper trading entrypoint

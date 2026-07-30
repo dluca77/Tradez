@@ -17,10 +17,8 @@ def create_broker(cfg: AppConfig) -> BrokerInterface:
         return OandaBroker()
 
     if name == "mt5":
-        raise NotImplementedError(
-            "MT5 adapter not implemented yet. Implement tradingbot/broker/mt5.py "
-            "against the MetaTrader5 official Python package and register it here."
-        )
+        from tradingbot.broker.mt5 import MT5Broker
+        return MT5Broker()
 
     if name == "ibkr":
         raise NotImplementedError(

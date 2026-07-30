@@ -13,10 +13,13 @@ def test_factory_returns_mock_broker_by_default():
     assert isinstance(broker, MockBroker)
 
 
-def test_factory_raises_for_unimplemented_mt5(monkeypatch):
+def test_factory_raises_for_mt5_without_terminal_available():
+    # On a plain Linux host (no MT5 terminal/Wine), the MetaTrader5 package
+    # itself is not importable — the adapter must fail with a clear error
+    # rather than crash unhelpfully or silently do nothing.
     cfg = load_config()
     cfg.raw["broker"]["name"] = "mt5"
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RuntimeError, match="MetaTrader5"):
         create_broker(cfg)
 
 

@@ -128,10 +128,12 @@ class Position:
     stop_loss: float
     initial_stop_loss: float
     take_profit_levels: list[TakeProfitLevel]
-    strategy: StrategyName
-    regime_at_entry: MarketRegime
-    confidence: float
-    risk_amount: float
+    # Unknown for positions reconciled from the broker rather than opened by
+    # our own signal engine (e.g. on startup recovery) — hence the defaults.
+    strategy: Optional[StrategyName] = None
+    regime_at_entry: Optional[MarketRegime] = None
+    confidence: float = 0.0
+    risk_amount: float = 0.0
     opened_at: datetime = field(default_factory=datetime.utcnow)
     breakeven_moved: bool = False
     trailing_active: bool = False
