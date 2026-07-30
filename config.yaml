@@ -1,0 +1,90 @@
+mode: paper                      # backtest | paper | live
+live_trading_enabled: false      # must be explicitly flipped after validation
+
+broker:
+  name: mock                     # mock | mt5 | oanda | ibkr
+  account_currency: USD
+
+instruments:
+  enabled:
+    - XAUUSD
+    - XAGUSD
+    - EURUSD
+    - GBPUSD
+    - USDJPY
+    - USDCHF
+    - AUDUSD
+    - USDCAD
+    - NAS100
+    - SPX500
+    - GER40
+  crypto_enabled: false
+
+timeframes:
+  execution: ["M1", "M3", "M5", "M15"]
+  context: ["H1", "H4"]
+
+account:
+  starting_balance: 10000.0
+
+risk:
+  default_risk_pct: 0.0025
+  min_risk_pct: 0.0010
+  max_risk_pct: 0.0075
+  absolute_max_risk_pct: 0.0075
+  max_daily_loss_pct: 0.02
+  max_weekly_loss_pct: 0.05
+  max_monthly_drawdown_pct: 0.10
+  max_total_open_risk_pct: 0.02
+  max_concurrent_positions: 3
+  max_trades_per_hour: 4
+  max_trades_per_day: 10
+  max_consecutive_losses: 4
+  cooldown_minutes_after_losses: 60
+  daily_profit_lock_pct: 0.02
+  daily_profit_soft_lock_pct: 0.015
+  daily_profit_giveback_pct: 0.5   # stop if 50% of day's peak profit is given back
+  martingale_forbidden: true
+
+confidence:
+  min_confidence_default: 75
+  min_confidence_high_volatility: 85
+  min_confidence_drawdown: 90
+
+scanning:
+  min_opportunity_score: 65
+  scan_interval_seconds: 15
+
+costs:
+  max_cost_to_expected_profit_ratio: 0.35
+
+news:
+  pre_event_blackout_minutes: 30
+  post_event_blackout_minutes: 15
+  high_impact_blackout_minutes: 60
+
+sessions:
+  prefer: ["london", "london_ny_overlap", "ny_open"]
+  avoid: ["rollover", "illiquid_asia_tail"]
+
+optimization:
+  enabled: true
+  min_sample_size: 30
+  max_confidence_increase_per_cycle: 5
+  max_risk_decrease_per_cycle: 0.05
+
+database:
+  path: data/tradingbot.db
+
+logging:
+  level: INFO
+  path: logs/tradingbot.log
+
+dashboard:
+  host: 0.0.0.0
+  port: 8080
+
+notifications:
+  enabled: true
+  channel: log   # log | webhook
+  webhook_url: ""
