@@ -82,7 +82,11 @@ async def scan_markets(
         for strategy_name, result in strategy_signals:
             spread_factor = quote.spread / avg_spread if avg_spread else 1.0
             htf_aligned = True  # strategies already check HTF where relevant
-            expected_rr = abs(result.take_profits[0] - result.entry_price) / abs(result.entry_price - result.stop_loss) if result.stop_loss != result.entry_price else 0.0
+            # Use the full/final target for expected R:R (what the trade
+            # thesis actually aims for), not just the conservative first
+            # partial-profit level — the latter under-scores every signal.
+            final_target = result.take_profits[-1]
+            expected_rr = abs(final_target - result.entry_price) / abs(result.entry_price - result.stop_loss) if result.stop_loss != result.entry_price else 0.0
 
             quantity_placeholder = 1.0
             costs = estimate_costs(instrument, quantity_placeholder, quote.spread)

@@ -28,22 +28,25 @@ def compute_confidence(inputs: ConfidenceInputs) -> tuple[float, list[str]]:
     score = 0.0
     reasons: list[str] = []
 
-    score += inputs.strategy_strength * 30
-    reasons.append(f"strategy strength {inputs.strategy_strength:.2f} -> +{inputs.strategy_strength*30:.1f}")
+    score += inputs.strategy_strength * 40
+    reasons.append(f"strategy strength {inputs.strategy_strength:.2f} -> +{inputs.strategy_strength*40:.1f}")
 
     if inputs.htf_aligned:
         score += 15
         reasons.append("higher-timeframe trend aligned -> +15")
 
-    score += inputs.session_quality * 10
-    reasons.append(f"session quality {inputs.session_quality:.2f} -> +{inputs.session_quality*10:.1f}")
+    score += inputs.session_quality * 15
+    reasons.append(f"session quality {inputs.session_quality:.2f} -> +{inputs.session_quality*15:.1f}")
 
     spread_penalty = max(0.0, (inputs.spread_ratio - 1.0)) * 15
     score -= min(spread_penalty, 15)
     if spread_penalty:
         reasons.append(f"spread {inputs.spread_ratio:.2f}x average -> -{min(spread_penalty,15):.1f}")
 
-    rr_bonus = min(inputs.expected_rr / 3.0, 1.0) * 15
+    # Full-target R:R (not just the conservative first partial-profit level),
+    # since that's what the trade thesis is actually aiming for. A 2:1 or
+    # better full target earns the max bonus here.
+    rr_bonus = min(inputs.expected_rr / 2.5, 1.0) * 20
     score += rr_bonus
     reasons.append(f"expected R:R {inputs.expected_rr:.2f} -> +{rr_bonus:.1f}")
 
