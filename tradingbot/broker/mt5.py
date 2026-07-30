@@ -73,7 +73,16 @@ class MT5Broker(BrokerInterface):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def connect(self) -> bool:
-        ok = await self._run(self.mt5.initialize, login=int(self.login), password=self.password, server=self.server)
+        # Prefer attaching to an already-running, already-logged-in MT5
+        # terminal (the normal, reliable setup: the operator opens and logs
+        # into the terminal manually, and leaves it running). Only attempt
+        # an explicit login with credentials from .env as a fallback, e.g.
+        # for a headless/automated terminal launch.
+        ok = await self._run(self.mt5.initialize)
+        if not ok:
+            ok = await self._run(
+                self.mt5.initialize, login=int(self.login), password=self.password, server=self.server
+            )
         self._connected = bool(ok)
         return self._connected
 
