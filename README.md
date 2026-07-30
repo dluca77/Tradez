@@ -8,10 +8,12 @@ protects capital, and recovers from failures — all without manual
 intervention. Crypto is disabled by default.
 
 **Current state of this repository: a fully working, tested paper-trading
-system.** Live trading is intentionally not wired to a real broker yet — see
-[Roadmap to live trading](#roadmap-to-live-trading) below. Nothing here
-places real orders until you explicitly build and enable a live broker
-adapter.
+system, plus a real OANDA broker adapter gated behind an explicit,
+multi-condition activation check (`tradingbot/live_gate.py`).** Nothing
+places a real order unless you set `broker.name: oanda`, fill in `.env`,
+pass every gate condition, and type the confirmation phrase in
+`run_live.py`. MT5 and IBKR adapters are stubbed and ready to implement the
+same way.
 
 ## Architecture
 
@@ -139,24 +141,47 @@ commission, and slippage costs before recording PnL.
   SQLite (`decisions`, `parameter_changes`, `safety_events`, `trades`
   tables) — nothing is a black box.
 
-## Roadmap to live trading
+## Backtesting with real historical data
 
-This repository intentionally ships the paper-trading path first, per the
-required build order. To add live trading safely:
+```bash
+python run_backtest.py EURUSD --csv path/to/eurusd_m5.csv
+python run_backtest.py XAUUSD --yfinance --period 60d --interval 5m   # requires: pip install yfinance
+```
 
-1. Implement a concrete `BrokerInterface` (see `tradingbot/broker/base.py`)
-   for a regulated broker with an official API — MetaTrader 5, OANDA, or
-   Interactive Brokers are natural first targets. Never scrape a broker's
-   website or use unofficial login flows.
-2. Validate the broker connection and credentials end-to-end in a demo/practice
-   account.
-3. Run the backtesting engine across representative history for every
-   enabled instrument/strategy pair.
-4. Run paper trading (this repo's default mode) for an extended period and
-   review `performance.py` output.
-5. Only then flip `live_trading_enabled: true` in `config.yaml` and swap the
-   `MockBroker` in `run_paper.py`/a new `run_live.py` for the real broker
-   adapter — one explicit, reviewed step, never automatic.
+`tradingbot/data_loader.py` loads CSV (`time,open,high,low,close[,volume]`)
+or, optionally, Yahoo Finance data, and derives the higher-timeframe context
+frame via `resample()`. The backtester (`tradingbot/backtest.py`) replays
+bar-by-bar with no look-ahead and applies spread/commission/slippage costs.
+
+## Live trading
+
+A real broker adapter now exists: `tradingbot/broker/oanda.py`, built only
+against OANDA's official v20 REST API (credentials from `.env`, never
+hardcoded). MT5 and IBKR adapters are stubbed in
+`tradingbot/broker/factory.py` — implement `tradingbot/broker/mt5.py` /
+`tradingbot/broker/ibkr.py` against `BrokerInterface` and register them
+there when needed.
+
+**Live trading cannot start without passing `tradingbot/live_gate.py`.**
+`run_live.py` calls it before doing anything else and refuses to place a
+single order unless every one of these holds:
+
+1. `config.yaml` has `live_trading_enabled: true`.
+2. The broker connection/credentials validate against the real account.
+3. Paper trading has produced at least 30 closed trades with a win rate
+   >= 40% and a profit factor >= 1.0 (`performance.py`).
+4. `config.yaml` risk limits are sane and within the hard safety ceiling
+   (max risk per trade <= 1%, martingale not disabled-off).
+5. The operator types the exact confirmation phrase at the terminal prompt.
+
+```bash
+# set broker.name: oanda in config.yaml, fill OANDA_* in .env, then:
+python run_live.py
+```
+
+`run_live.py` prints a checklist of every gate condition (pass/fail) before
+deciding. If it refuses, run paper trading longer or fix whatever failed —
+there is no override flag.
 
 ## Project layout
 
@@ -184,8 +209,14 @@ tradingbot/
   notifications.py                    user notifications
   database.py                          SQLite persistence + audit log
   backtest.py                           backtesting engine
+  data_loader.py                         historical data (CSV / yfinance)
+  live_gate.py                            live-trading activation gate
+  broker/oanda.py                          OANDA live broker adapter
+  broker/factory.py                         broker selection from config
 tests/                                   unit tests
 run_paper.py                              paper trading entrypoint
+run_live.py                                live trading entrypoint (gated)
+run_backtest.py                             backtest CLI
 config.yaml                                all tunable parameters
 .env.example                                credential template
 Dockerfile / docker-compose.yml              containerized deployment
