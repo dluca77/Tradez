@@ -60,13 +60,23 @@ class MockBroker(BrokerInterface):
         return QuoteTick(instrument=instrument, bid=mid - half_spread, ask=mid + half_spread)
 
     async def get_candles(self, instrument: str, timeframe: str, count: int) -> list[Candle]:
+        # Builds a synthetic history ENDING at the current live price
+        # (self._prices[instrument], which only ever advances via
+        # get_quote's small per-call step). Crucially this does NOT persist
+        # its own random walk back into self._prices — earlier it did, and
+        # since this is called many times per scan cycle (M5 + H1, per
+        # instrument, plus once per open position during management), that
+        # meant the "market clock" fast-forwarded by days on every call,
+        # compounding into wild, unrealistic price swings within seconds of
+        # real time and tripping the drawdown kill switch almost instantly.
         tf_minutes = {"M1": 1, "M3": 3, "M5": 5, "M15": 15, "H1": 60, "H4": 240}.get(timeframe, 5)
         profile = INSTRUMENT_PROFILES[instrument]
-        price = self._prices[instrument]
+        end_price = self._prices[instrument]
         candles: list[Candle] = []
         now = datetime.utcnow()
         vol = profile["ann_vol"]
         dt = tf_minutes / (252 * 24 * 60)
+        price = end_price
         for i in range(count):
             o = price
             steps = max(1, tf_minutes)
@@ -81,7 +91,6 @@ class MockBroker(BrokerInterface):
             t = now - timedelta(minutes=tf_minutes * (count - i))
             candles.append(Candle(time=t, open=o, high=h, low=l, close=c, volume=vol_bar))
             price = c
-        self._prices[instrument] = price
         return candles
 
     async def get_account_info(self) -> AccountInfo:
