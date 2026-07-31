@@ -214,7 +214,15 @@ class MT5Broker(BrokerInterface):
         mt5 = self.mt5
 
         volume = await self._to_broker_volume(symbol, quantity)
-        filling_mode = await self._filling_mode(symbol)
+        preferred_filling = await self._filling_mode(symbol)
+        # The symbol's advertised filling_mode bitmask isn't always reliable
+        # across brokers — try the preferred mode first, then fall back
+        # through the others on retcode 10030 "Unsupported filling mode"
+        # specifically, instead of trusting the bitmask blindly.
+        filling_candidates = [preferred_filling] + [
+            m for m in (mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN)
+            if m != preferred_filling
+        ]
 
         action = mt5.TRADE_ACTION_DEAL if order_type == OrderType.MARKET else mt5.TRADE_ACTION_PENDING
         type_map = {
@@ -227,23 +235,30 @@ class MT5Broker(BrokerInterface):
         }
         mt5_type = type_map.get((order_type, direction), mt5.ORDER_TYPE_BUY if direction == Direction.LONG else mt5.ORDER_TYPE_SELL)
 
-        request = {
-            "action": action,
-            "symbol": symbol,
-            "volume": volume,
-            "type": mt5_type,
-            "deviation": 20,
-            "type_filling": filling_mode,
-            "type_time": mt5.ORDER_TIME_GTC,
-        }
-        if price is not None and order_type != OrderType.MARKET:
-            request["price"] = price
-        if stop_loss is not None:
-            request["sl"] = stop_loss
-        if take_profit is not None:
-            request["tp"] = take_profit
+        result = None
+        for filling_mode in filling_candidates:
+            request = {
+                "action": action,
+                "symbol": symbol,
+                "volume": volume,
+                "type": mt5_type,
+                "deviation": 20,
+                "type_filling": filling_mode,
+                "type_time": mt5.ORDER_TIME_GTC,
+            }
+            if price is not None and order_type != OrderType.MARKET:
+                request["price"] = price
+            if stop_loss is not None:
+                request["sl"] = stop_loss
+            if take_profit is not None:
+                request["tp"] = take_profit
 
-        result = await self._run(mt5.order_send, request)
+            result = await self._run(mt5.order_send, request)
+            if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+                break
+            if result is None or result.retcode != 10030:  # not "unsupported filling mode" -> no point retrying
+                break
+
         filled = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
         if not filled:
             # order_send() can return a result object even on rejection —
