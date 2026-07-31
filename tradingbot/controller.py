@@ -67,6 +67,7 @@ class AutonomousTradingController:
         self._positions_meta: dict[str, dict] = {}  # position_id -> signal metadata
         self.running = False
         self.paused = False
+        self._day_date = datetime.utcnow().date()
 
     async def startup(self) -> None:
         await self.recovery.recover()
@@ -88,6 +89,20 @@ class AutonomousTradingController:
         self.running = False
 
     async def run_cycle(self) -> None:
+        # Roll the hour/day trade counters. Without this, trades_this_hour
+        # and trades_today only ever climb until they permanently exceed
+        # max_trades_per_hour/max_trades_per_day, which blocks every future
+        # trade for the rest of the run (observed: bot went completely
+        # silent, no open positions, no new signals, after 4 trades opened
+        # within a few minutes).
+        now = datetime.utcnow()
+        if now - self.state.hour_window_start >= timedelta(hours=1):
+            self.state.trades_this_hour = 0
+            self.state.hour_window_start = now
+        if now.date() != self._day_date:
+            self.state.trades_today = 0
+            self._day_date = now.date()
+
         # 1-2: broker + account
         connected = await self.broker.is_connected()
         status = self.safety.check_broker_connection(connected)
