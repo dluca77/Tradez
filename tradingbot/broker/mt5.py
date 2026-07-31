@@ -72,6 +72,23 @@ class MT5Broker(BrokerInterface):
     async def _run(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
+    async def _ensure_symbol(self, symbol: str) -> None:
+        # MT5 only serves ticks/rates for symbols visible in the terminal's
+        # Market Watch panel. A symbol the operator hasn't manually added
+        # there fails copy_rates_from_pos/symbol_info_tick with a generic
+        # "Terminal: Call failed" (-1) even though the symbol itself may be
+        # perfectly valid at the broker — this call makes it visible on
+        # first use instead of requiring manual setup per instrument.
+        info = await self._run(self.mt5.symbol_info, symbol)
+        if info is None:
+            raise RuntimeError(
+                f"MT5 symbol '{symbol}' does not exist at this broker. Check the symbol "
+                f"name/suffix in MT5_SYMBOL_MAP or MT5_SYMBOL_SUFFIX, or remove this "
+                f"instrument from config.yaml's instruments.enabled list."
+            )
+        if not info.visible:
+            await self._run(self.mt5.symbol_select, symbol, True)
+
     async def connect(self) -> bool:
         # Prefer attaching to an already-running, already-logged-in MT5
         # terminal (the normal, reliable setup: the operator opens and logs
@@ -125,6 +142,7 @@ class MT5Broker(BrokerInterface):
 
     async def get_quote(self, instrument: str) -> QuoteTick:
         symbol = self._symbol(instrument)
+        await self._ensure_symbol(symbol)
         tick = await self._run(self.mt5.symbol_info_tick, symbol)
         if tick is None:
             raise RuntimeError(f"MT5 symbol_info_tick({symbol}) failed: {self.mt5.last_error()}")
@@ -132,6 +150,7 @@ class MT5Broker(BrokerInterface):
 
     async def get_candles(self, instrument: str, timeframe: str, count: int) -> list[Candle]:
         symbol = self._symbol(instrument)
+        await self._ensure_symbol(symbol)
         tf_const = getattr(self.mt5, _TIMEFRAME_NAMES.get(timeframe, "TIMEFRAME_M5"))
         rates = await self._run(self.mt5.copy_rates_from_pos, symbol, tf_const, 0, count)
         if rates is None:

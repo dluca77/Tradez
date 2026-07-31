@@ -183,22 +183,28 @@ class AutonomousTradingController:
 
     async def _manage_open_positions(self, open_positions) -> None:
         for pos in open_positions:
-            # The actual "current price" for stop-loss/take-profit and R-multiple
-            # decisions MUST come from the live quote (a single, continuously
-            # anchored tick), not from the last close of a freshly generated
-            # candle series — get_candles() synthesizes a brand-new stochastic
-            # path every call and its endpoint can jump far from the real
-            # current price, which let losses blow past the stop-loss check.
-            # Candles are only used here to compute ATR for the trailing stop.
-            quote = await self.broker.get_quote(pos.instrument)
-            current_price = quote.mid
+            try:
+                # The actual "current price" for stop-loss/take-profit and R-multiple
+                # decisions MUST come from the live quote (a single, continuously
+                # anchored tick), not from the last close of a freshly generated
+                # candle series — get_candles() synthesizes a brand-new stochastic
+                # path every call and its endpoint can jump far from the real
+                # current price, which let losses blow past the stop-loss check.
+                # Candles are only used here to compute ATR for the trailing stop.
+                quote = await self.broker.get_quote(pos.instrument)
+                current_price = quote.mid
 
-            candles = await self.broker.get_candles(pos.instrument, "M5", 30)
-            from tradingbot.indicators import atr as atr_fn
-            import pandas as pd
+                candles = await self.broker.get_candles(pos.instrument, "M5", 30)
+                from tradingbot.indicators import atr as atr_fn
+                import pandas as pd
 
-            df = pd.DataFrame({"high": [c.high for c in candles], "low": [c.low for c in candles], "close": [c.close for c in candles]})
-            current_atr = float(atr_fn(df, 14).iloc[-1]) if len(df) >= 14 else abs(pos.entry_price - pos.stop_loss)
+                df = pd.DataFrame({"high": [c.high for c in candles], "low": [c.low for c in candles], "close": [c.close for c in candles]})
+                current_atr = float(atr_fn(df, 14).iloc[-1]) if len(df) >= 14 else abs(pos.entry_price - pos.stop_loss)
+            except RuntimeError as exc:
+                # A single broker hiccup on one instrument must not stop
+                # management of every other open position this cycle.
+                log.error("position.manage_data_error", instrument=pos.instrument, error=str(exc))
+                continue
 
             actions = await self.position_manager.manage(pos, current_price, current_atr, signal_still_valid=True)
             for action in actions:

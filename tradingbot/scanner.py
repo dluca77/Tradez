@@ -58,8 +58,14 @@ async def scan_markets(
         if blackout:
             continue
 
-        candles_exec = await broker.get_candles(instrument, "M5", 150)
-        candles_ctx = await broker.get_candles(instrument, "H1", 150)
+        try:
+            candles_exec = await broker.get_candles(instrument, "M5", 150)
+            candles_ctx = await broker.get_candles(instrument, "H1", 150)
+        except RuntimeError:
+            # One broken/unavailable instrument (e.g. a symbol the real
+            # broker doesn't offer under this name) must not take down the
+            # whole scan cycle — skip it and keep scanning the rest.
+            continue
         df_exec = _candles_to_df(candles_exec)
         df_ctx = _candles_to_df(candles_ctx)
         if len(df_exec) < 30:

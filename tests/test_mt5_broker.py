@@ -60,6 +60,8 @@ def _make_fake_mt5():
     fake.account_info = lambda: _FakeAccountInfo()
     fake.positions_get = lambda **kwargs: (_FakePosition(),)
     fake.symbol_info_tick = lambda symbol: _FakeTick()
+    fake.symbol_info = lambda symbol: types.SimpleNamespace(visible=True)
+    fake.symbol_select = lambda symbol, enable: True
     fake.last_error = lambda: "no error"
 
     def fake_order_send(request):
