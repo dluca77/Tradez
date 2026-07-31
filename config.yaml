@@ -37,8 +37,8 @@ risk:
   max_monthly_drawdown_pct: 0.10
   max_total_open_risk_pct: 0.02
   max_concurrent_positions: 3
-  max_trades_per_hour: 4
-  max_trades_per_day: 10
+  max_trades_per_hour: 12
+  max_trades_per_day: 30
   max_consecutive_losses: 4
   cooldown_minutes_after_losses: 60
   daily_profit_lock_pct: 0.02
