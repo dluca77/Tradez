@@ -4,6 +4,8 @@ Run alongside the controller in the same process (see run_paper.py).
 """
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -61,6 +63,13 @@ TEMPLATE = """<!doctype html>
   .btn-flatten {{ background: #3a2f1d; color: #f0a93d; }}
   .btn-kill {{ background: #3a2020; color: #ff6b6b; }}
   .note {{ font-size: .78rem; color: #5a6472; margin-top: 10px; }}
+  .chart-card {{
+    background: #151a24; border: 1px solid #232a38; border-radius: 14px;
+    padding: 12px; margin-bottom: 10px;
+  }}
+  .chart-title {{ font-size: .85rem; margin-bottom: 6px; }}
+  .chart-title .dir-long, .chart-title .dir-short {{ margin: 0 4px; }}
+  canvas.candles {{ width: 100%; height: 160px; display: block; }}
   #toast {{
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: #1d3a2a; color: #3ddc84; padding: 10px 18px; border-radius: 10px;
@@ -146,6 +155,11 @@ TEMPLATE = """<!doctype html>
 </section>
 
 <section>
+  <div class="section-title">Live grafieken (5-minuten candles, met instapprijs)</div>
+  {charts_html}
+</section>
+
+<section>
   <div class="section-title">Recent gesloten trades</div>
   {recent_trades_table}
 </section>
@@ -171,6 +185,66 @@ async function callControl(path) {{
   setTimeout(() => toast.style.display = 'none', 1800);
   setTimeout(() => location.reload(), 900);
 }}
+
+function drawCandles(canvas, candles, entry, direction) {{
+  if (!candles || candles.length === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth || 300;
+  const height = 160;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+
+  let lo = Math.min(...candles.map(c => c.l), entry);
+  let hi = Math.max(...candles.map(c => c.h), entry);
+  const pad = (hi - lo) * 0.08 || Math.abs(entry) * 0.001 || 0.0001;
+  lo -= pad; hi += pad;
+  const y = v => height - ((v - lo) / (hi - lo)) * height;
+
+  const n = candles.length;
+  const cw = width / n;
+  candles.forEach((c, i) => {{
+    const x = i * cw + cw / 2;
+    const up = c.c >= c.o;
+    ctx.strokeStyle = up ? '#3ddc84' : '#ff6b6b';
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y(c.h));
+    ctx.lineTo(x, y(c.l));
+    ctx.stroke();
+    const bodyTop = y(Math.max(c.o, c.c));
+    const bodyBot = y(Math.min(c.o, c.c));
+    ctx.fillRect(x - cw * 0.32, bodyTop, cw * 0.64, Math.max(1, bodyBot - bodyTop));
+  }});
+
+  const entryY = y(entry);
+  ctx.strokeStyle = '#f0a93d';
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, entryY);
+  ctx.lineTo(width, entryY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#f0a93d';
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.fillText('Instap ' + entry.toFixed(5), 4, entryY > 12 ? entryY - 4 : entryY + 12);
+}}
+
+async function loadChart(instrument, entry, direction, canvasId) {{
+  try {{
+    const res = await fetch(`/api/candles/${{instrument}}?timeframe=M5&count=60`);
+    const candles = await res.json();
+    const canvas = document.getElementById(canvasId);
+    if (canvas) drawCandles(canvas, candles, entry, direction);
+  }} catch (e) {{ /* ignore, chart just stays blank */ }}
+}}
+
+const openPositionsForCharts = {positions_json};
+openPositionsForCharts.forEach(p => loadChart(p.instrument, p.entry, p.direction, p.canvas_id));
 </script>
 </body></html>"""
 
@@ -189,6 +263,11 @@ TRADE_ROW = """<tr>
   <td class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
   <td>{exit_reason}</td>
 </tr>"""
+
+CHART_CARD = """<div class="chart-card">
+  <div class="chart-title">{instrument} <span class="dir-{direction_class}">{direction_label}</span> &middot; instap {entry_price:.5f}</div>
+  <canvas class="candles" id="{canvas_id}"></canvas>
+</div>"""
 
 
 def _direction_label(direction_value: str) -> tuple[str, str]:
@@ -211,7 +290,9 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
         total_pnl_pct = (perf.total_pnl / starting_balance * 100) if starting_balance else 0.0
 
         rows = []
-        for pos in positions:
+        chart_cards = []
+        positions_for_js = []
+        for idx, pos in enumerate(positions):
             try:
                 quote = await controller.broker.get_quote(pos.instrument)
                 current_price = quote.mid
@@ -225,10 +306,20 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
                 entry_price=pos.entry_price, current_price=current_price,
                 pnl_class="pos" if pnl >= 0 else "neg", pnl_sign="+" if pnl >= 0 else "-", pnl=abs(pnl),
             ))
+            canvas_id = f"chart-{idx}-{pos.instrument}"
+            chart_cards.append(CHART_CARD.format(
+                instrument=pos.instrument, direction_class=dclass, direction_label=dlabel,
+                entry_price=pos.entry_price, canvas_id=canvas_id,
+            ))
+            positions_for_js.append({
+                "instrument": pos.instrument, "entry": pos.entry_price,
+                "direction": dclass, "canvas_id": canvas_id,
+            })
         positions_table = (
             "<table><tr><th>Instrument</th><th>Richting</th><th>Instap</th><th>Nu</th><th>Winst/Verlies</th></tr>"
             + "".join(rows) + "</table>"
         ) if rows else '<div class="empty">Geen open posities op dit moment.</div>'
+        charts_html = "".join(chart_cards) if chart_cards else '<div class="empty">Geen open posities om te tonen.</div>'
 
         closed = [
             r for r in controller.db.fetch_closed_trades()
@@ -270,7 +361,9 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             losses=controller.state.consecutive_losses,
             paused_label="Gepauzeerd" if controller.paused else "Actief aan het zoeken",
             positions_table=positions_table,
+            charts_html=charts_html,
             recent_trades_table=recent_trades_table,
+            positions_json=json.dumps(positions_for_js),
         )
 
     @app.get("/api/status")
@@ -300,6 +393,14 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             "by_instrument": perf.by_instrument,
             "by_strategy": perf.by_strategy,
         }
+
+    @app.get("/api/candles/{instrument}")
+    async def candles(instrument: str, timeframe: str = "M5", count: int = 60):
+        data = await controller.broker.get_candles(instrument, timeframe, count)
+        return [
+            {"t": c.time.isoformat(), "o": c.open, "h": c.high, "l": c.low, "c": c.close}
+            for c in data
+        ]
 
     @app.post("/control/pause")
     async def pause():
