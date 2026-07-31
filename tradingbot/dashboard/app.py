@@ -212,7 +212,7 @@ TEMPLATE = """<!doctype html>
     <button class="btn-flatten" onclick="if(confirm('Alle open posities nu sluiten?')) callControl('/control/flatten')">&#128721; Sluit alles</button>
     <button class="btn-kill" onclick="if(confirm('Noodstop activeren? De bot stopt dan volledig tot een herstart.')) callControl('/control/kill')">&#9888; Noodstop</button>
   </div>
-  <div class="note">"Pauzeer" stopt nieuwe trades maar blijft open posities beheren. "Noodstop" stopt alles hard.</div>
+  <div class="note">"Pauzeer" stopt nieuwe trades maar blijft open posities beheren. "Hervat" heft ook een cooldown na 4 verliezen op rij op. "Noodstop" stopt alles hard.</div>
 </section>
 
 <div id="toast"></div>
@@ -637,6 +637,13 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
     @app.post("/control/resume")
     async def resume():
         controller.paused = False
+        # "Resume" must also act as a manual override of the consecutive-
+        # loss cooldown — otherwise pressing it after 4 losses in a row did
+        # nothing, since that block came from the risk manager, not the
+        # pause flag, and only an automatic cooldown timer or a win cleared
+        # it. A human explicitly pressing resume is a deliberate override.
+        controller.state.consecutive_losses = 0
+        controller.state.cooldown_until = None
         return {"paused": False}
 
     @app.post("/control/kill")

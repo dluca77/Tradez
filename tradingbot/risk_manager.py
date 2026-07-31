@@ -65,8 +65,18 @@ class DynamicRiskManager:
         if state.kill_switch:
             return RiskDecision(0.0, ["kill switch active"], blocked=True, block_reason="kill_switch")
 
-        if state.cooldown_until and now < state.cooldown_until:
-            return RiskDecision(0.0, [f"cooldown active until {state.cooldown_until}"], blocked=True, block_reason="cooldown")
+        if state.cooldown_until:
+            if now < state.cooldown_until:
+                return RiskDecision(0.0, [f"cooldown active until {state.cooldown_until}"], blocked=True, block_reason="cooldown")
+            # Cooldown period has elapsed — automatically clear it and the
+            # consecutive-loss streak that triggered it. Without this, a
+            # consecutive-losses block never expired on its own: it only
+            # ever cleared on the next WINNING trade, but no new trades
+            # could open to produce that win — a permanent deadlock that
+            # "Hervat" (resume) couldn't fix either, since resume only
+            # un-pauses and has nothing to do with this counter.
+            state.cooldown_until = None
+            state.consecutive_losses = 0
 
         day_dd = (state.day_peak_equity - equity) / state.day_peak_equity if state.day_peak_equity else 0.0
         month_dd = (state.peak_equity - equity) / state.peak_equity if state.peak_equity else 0.0

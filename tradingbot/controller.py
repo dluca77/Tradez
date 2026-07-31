@@ -237,10 +237,7 @@ class AutonomousTradingController:
 
         self.db.record_trade_close(trade_id, exit_price, pnl, r_mult, exit_reason)
         self.notifications.trade_closed(row["instrument"], pnl, r_mult)
-        if pnl < 0:
-            self.state.consecutive_losses += 1
-        else:
-            self.state.consecutive_losses = 0
+        self._register_trade_result(pnl)
         log.info(
             "trade.closed_at_broker",
             trade_id=trade_id,
@@ -285,10 +282,25 @@ class AutonomousTradingController:
                     r_mult = (current_price - entry) * direction_mult / abs(entry - pos.initial_stop_loss) if pos.initial_stop_loss != entry else 0.0
                     self.db.record_trade_close(pos.id, current_price, pnl, r_mult, action.action)
                     self.notifications.trade_closed(pos.instrument, pnl, r_mult)
-                    if pos.direction == Direction.LONG and pnl < 0 or pos.direction == Direction.SHORT and pnl < 0:
-                        self.state.consecutive_losses += 1
-                    else:
-                        self.state.consecutive_losses = 0
+                    self._register_trade_result(pnl)
+
+    def _register_trade_result(self, pnl: float) -> None:
+        if pnl < 0:
+            self.state.consecutive_losses += 1
+            if self.state.consecutive_losses >= self.cfg.risk.max_consecutive_losses and not self.state.cooldown_until:
+                # Start an actual cooldown timer instead of leaving the bot
+                # blocked indefinitely — cooldown_minutes_after_losses was
+                # configured but never used anywhere before this.
+                minutes = self.cfg.risk.cooldown_minutes_after_losses
+                self.state.cooldown_until = datetime.utcnow() + timedelta(minutes=minutes)
+                log.warning(
+                    "risk.cooldown_started",
+                    consecutive_losses=self.state.consecutive_losses,
+                    cooldown_until=self.state.cooldown_until.isoformat(),
+                )
+        else:
+            self.state.consecutive_losses = 0
+            self.state.cooldown_until = None
 
     async def _try_open_trade(self, signal, equity: float, open_positions) -> bool:
         instrument_currencies = INSTRUMENT_CURRENCIES.get(signal.instrument, [])
