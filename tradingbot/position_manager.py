@@ -45,6 +45,33 @@ class PositionManagementEngine:
 
     async def manage(self, pos: Position, current_price: float, current_atr: float, signal_still_valid: bool) -> list[ManagementAction]:
         actions: list[ManagementAction] = []
+
+        # 0) Stop-loss / take-profit hit — this MUST be checked first, before
+        # any other management, and must actually close the position. Without
+        # this, a stored stop-loss/take-profit is purely decorative: nothing
+        # else in this engine enforces it, so a losing trade could otherwise
+        # run far past its intended risk.
+        direction_mult = 1 if pos.direction == Direction.LONG else -1
+        stop_hit = (
+            current_price <= pos.stop_loss if pos.direction == Direction.LONG
+            else current_price >= pos.stop_loss
+        )
+        if stop_hit:
+            await self.broker.close_position(pos.id, fraction=1.0)
+            actions.append(ManagementAction("exit_stop_loss", f"stop-loss hit at {current_price:.5f}"))
+            return actions
+
+        if pos.take_profit_levels:
+            final_tp = pos.take_profit_levels[-1].price
+            tp_hit = (
+                current_price >= final_tp if pos.direction == Direction.LONG
+                else current_price <= final_tp
+            )
+            if tp_hit:
+                await self.broker.close_position(pos.id, fraction=1.0)
+                actions.append(ManagementAction("exit_take_profit", f"take-profit hit at {current_price:.5f}"))
+                return actions
+
         r = _r_multiple(pos, current_price)
 
         # 1) Break-even at 1R
