@@ -40,7 +40,10 @@ class AutonomousTradingController:
         self.db = db or Database(cfg.get("database", "path", default="data/tradingbot.db"))
         self.risk_manager = DynamicRiskManager(cfg.risk)
         self.execution = OrderExecutionEngine(broker)
-        self.position_manager = PositionManagementEngine(broker)
+        # Shortened from the 6h production default to 1h during this paper-
+        # trading test phase, purely so trades cycle through faster while
+        # building the 30-trade sample needed for the live-trading gate.
+        self.position_manager = PositionManagementEngine(broker, max_hold=timedelta(hours=1))
         self.safety = SafetyModule(self.db, cfg.risk.max_monthly_drawdown_pct)
         self.recovery = RecoveryService(broker, self.db)
         self.notifications = NotificationService(
