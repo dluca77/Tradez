@@ -156,8 +156,17 @@ class AutonomousTradingController:
 
     async def _manage_open_positions(self, open_positions) -> None:
         for pos in open_positions:
+            # The actual "current price" for stop-loss/take-profit and R-multiple
+            # decisions MUST come from the live quote (a single, continuously
+            # anchored tick), not from the last close of a freshly generated
+            # candle series — get_candles() synthesizes a brand-new stochastic
+            # path every call and its endpoint can jump far from the real
+            # current price, which let losses blow past the stop-loss check.
+            # Candles are only used here to compute ATR for the trailing stop.
+            quote = await self.broker.get_quote(pos.instrument)
+            current_price = quote.mid
+
             candles = await self.broker.get_candles(pos.instrument, "M5", 30)
-            current_price = candles[-1].close if candles else pos.entry_price
             from tradingbot.indicators import atr as atr_fn
             import pandas as pd
 

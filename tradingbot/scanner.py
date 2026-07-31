@@ -80,17 +80,33 @@ async def scan_markets(
             continue
 
         for strategy_name, result in strategy_signals:
+            # Rebase the strategy's entry/stop/targets onto the REAL current
+            # quote. Strategies compute entry_price from the last candle
+            # close of a synthetic history that can drift from the live
+            # price by the time the signal is actually acted on — without
+            # this, position sizing and stop-loss distance get calculated
+            # against a stale reference price, which let losses land far
+            # outside the intended risk (observed: -0.65R actually meant
+            # -EUR464 instead of the ~EUR75 that R was supposed to represent).
+            # Shifting everything by the same offset preserves the
+            # strategy's intended risk:reward shape while anchoring it to
+            # reality.
+            offset = quote.mid - result.entry_price
+            entry_price = quote.mid
+            stop_loss = result.stop_loss + offset
+            take_profits = [tp + offset for tp in result.take_profits]
+
             spread_factor = quote.spread / avg_spread if avg_spread else 1.0
             htf_aligned = True  # strategies already check HTF where relevant
             # Use the full/final target for expected R:R (what the trade
             # thesis actually aims for), not just the conservative first
             # partial-profit level — the latter under-scores every signal.
-            final_target = result.take_profits[-1]
-            expected_rr = abs(final_target - result.entry_price) / abs(result.entry_price - result.stop_loss) if result.stop_loss != result.entry_price else 0.0
+            final_target = take_profits[-1]
+            expected_rr = abs(final_target - entry_price) / abs(entry_price - stop_loss) if stop_loss != entry_price else 0.0
 
             quantity_placeholder = 1.0
             costs = estimate_costs(instrument, quantity_placeholder, quote.spread)
-            expected_gross = abs(result.take_profits[0] - result.entry_price) * quantity_placeholder
+            expected_gross = abs(take_profits[0] - entry_price) * quantity_placeholder
             cost_ratio = cost_to_profit_ratio(costs.total, expected_gross)
 
             liquidity_score = 1.0 - min(spread_factor - 1.0, 1.0) if spread_factor > 1 else 1.0
@@ -118,9 +134,9 @@ async def scan_markets(
                 strategy=strategy_name,
                 regime=regime,
                 confidence=confidence,
-                entry_price=result.entry_price,
-                stop_loss=result.stop_loss,
-                take_profits=result.take_profits,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                take_profits=take_profits,
                 atr=result.atr,
                 reasons=result.reasons + conf_reasons + [f"session={sess_name}"],
                 expected_reward_r=expected_rr,
