@@ -651,11 +651,13 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
         # it. A human explicitly pressing resume is a deliberate override.
         controller.state.consecutive_losses = 0
         controller.state.cooldown_until = None
+        controller._persist_state()
         return {"paused": False}
 
     @app.post("/control/kill")
     async def kill():
         controller.safety.manual_kill_switch(controller.state, "dashboard_manual")
+        controller._persist_state()
         return {"kill_switch": True}
 
     @app.post("/control/flatten")

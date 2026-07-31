@@ -91,6 +91,31 @@ class AutonomousTradingController:
         except Exception as exc:  # noqa: BLE001
             log.error("controller.startup_equity_fetch_failed", error=str(exc))
 
+        # Restore risk/safety state (cooldowns, loss streaks, kill switch,
+        # trade counters) that was in effect when the process last stopped.
+        # Without this, every restart silently wiped these back to defaults
+        # in memory, letting the bot bypass a cooldown or trade-limit block
+        # that should still have applied.
+        persisted = self.db.load_session_state()
+        if persisted:
+            self.state.consecutive_losses = persisted["consecutive_losses"]
+            self.state.trades_today = persisted["trades_today"]
+            self.state.trades_this_hour = persisted["trades_this_hour"]
+            self.state.hour_window_start = datetime.fromisoformat(persisted["hour_window_start"])
+            self.state.cooldown_until = (
+                datetime.fromisoformat(persisted["cooldown_until"]) if persisted["cooldown_until"] else None
+            )
+            self.state.kill_switch = bool(persisted["kill_switch"])
+            self.state.risk_scale = persisted["risk_scale"]
+            self._day_date = datetime.fromisoformat(persisted["day_date"]).date()
+            log.info(
+                "controller.session_state_restored",
+                consecutive_losses=self.state.consecutive_losses,
+                cooldown_until=persisted["cooldown_until"],
+                kill_switch=self.state.kill_switch,
+                trades_today=self.state.trades_today,
+            )
+
         log.info("controller.started", mode=self.cfg.mode)
 
     async def run_forever(self, interval_seconds: int = 15) -> None:
@@ -106,6 +131,18 @@ class AutonomousTradingController:
 
     def stop(self) -> None:
         self.running = False
+
+    def _persist_state(self) -> None:
+        self.db.save_session_state(
+            consecutive_losses=self.state.consecutive_losses,
+            trades_today=self.state.trades_today,
+            trades_this_hour=self.state.trades_this_hour,
+            hour_window_start=self.state.hour_window_start,
+            cooldown_until=self.state.cooldown_until,
+            kill_switch=self.state.kill_switch,
+            risk_scale=self.state.risk_scale,
+            day_date=self._day_date,
+        )
 
     async def run_cycle(self) -> None:
         # Roll the hour/day trade counters. Without this, trades_this_hour
@@ -137,6 +174,7 @@ class AutonomousTradingController:
         dd_status = self.safety.check_drawdown(self.state.peak_equity, account.equity, self.state)
         if not dd_status.ok:
             self.notifications.safety_stop(dd_status.reason or "drawdown")
+            self._persist_state()
             await self.position_manager.emergency_close_all(await self.broker.get_open_positions(), "max_drawdown_kill_switch")
             return
 
@@ -301,6 +339,7 @@ class AutonomousTradingController:
         else:
             self.state.consecutive_losses = 0
             self.state.cooldown_until = None
+        self._persist_state()
 
     async def _try_open_trade(self, signal, equity: float, open_positions) -> bool:
         instrument_currencies = INSTRUMENT_CURRENCIES.get(signal.instrument, [])
@@ -404,5 +443,6 @@ class AutonomousTradingController:
         })
         self.state.trades_today += 1
         self.state.trades_this_hour += 1
+        self._persist_state()
         self.notifications.trade_opened(signal.instrument, signal.direction.value, signal.confidence)
         return True

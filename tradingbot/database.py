@@ -53,6 +53,18 @@ CREATE TABLE IF NOT EXISTS safety_events (
     event_type TEXT NOT NULL,
     detail TEXT
 );
+
+CREATE TABLE IF NOT EXISTS session_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    consecutive_losses INTEGER NOT NULL,
+    trades_today INTEGER NOT NULL,
+    trades_this_hour INTEGER NOT NULL,
+    hour_window_start TEXT NOT NULL,
+    cooldown_until TEXT,
+    kill_switch INTEGER NOT NULL,
+    risk_scale REAL NOT NULL,
+    day_date TEXT NOT NULL
+);
 """
 
 
@@ -125,3 +137,47 @@ class Database:
             conn.row_factory = sqlite3.Row
             cur = conn.execute("SELECT * FROM trades WHERE closed_at IS NULL")
             return cur.fetchall()
+
+    def save_session_state(
+        self,
+        consecutive_losses: int,
+        trades_today: int,
+        trades_this_hour: int,
+        hour_window_start: datetime,
+        cooldown_until: datetime | None,
+        kill_switch: bool,
+        risk_scale: float,
+        day_date,
+    ) -> None:
+        # Single-row upsert (id is pinned to 1) so risk/safety state survives
+        # a bot restart instead of silently resetting to defaults — a reset
+        # consecutive_losses/cooldown_until/kill_switch lets the bot bypass
+        # a safety block that should still be in effect.
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO session_state
+                   (id, consecutive_losses, trades_today, trades_this_hour, hour_window_start,
+                    cooldown_until, kill_switch, risk_scale, day_date)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       consecutive_losses=excluded.consecutive_losses,
+                       trades_today=excluded.trades_today,
+                       trades_this_hour=excluded.trades_this_hour,
+                       hour_window_start=excluded.hour_window_start,
+                       cooldown_until=excluded.cooldown_until,
+                       kill_switch=excluded.kill_switch,
+                       risk_scale=excluded.risk_scale,
+                       day_date=excluded.day_date""",
+                (
+                    consecutive_losses, trades_today, trades_this_hour,
+                    hour_window_start.isoformat(),
+                    cooldown_until.isoformat() if cooldown_until else None,
+                    int(kill_switch), risk_scale, day_date.isoformat(),
+                ),
+            )
+
+    def load_session_state(self) -> sqlite3.Row | None:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute("SELECT * FROM session_state WHERE id = 1")
+            return cur.fetchone()
