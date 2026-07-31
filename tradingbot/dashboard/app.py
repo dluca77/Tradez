@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -13,6 +14,11 @@ from fastapi.responses import HTMLResponse
 from tradingbot.controller import AutonomousTradingController
 from tradingbot.models import Direction
 from tradingbot.performance import compute_performance
+
+# All timestamps are stored in the database as naive UTC (datetime.utcnow()).
+# Displaying them as-is silently showed UTC as if it were local time, running
+# 2 hours behind the user's actual clock (Netherlands, CEST in summer).
+_LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
 TEMPLATE = """<!doctype html>
 <html><head><title>Trading Bot</title>
@@ -419,7 +425,8 @@ def _fmt_dt(value: str | None) -> str:
     if not value:
         return "-"
     try:
-        return datetime.fromisoformat(value).strftime("%d-%m %H:%M")
+        dt = datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+        return dt.astimezone(_LOCAL_TZ).strftime("%d-%m %H:%M")
     except ValueError:
         return value
 
