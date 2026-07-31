@@ -296,6 +296,7 @@ class MT5Broker(BrokerInterface):
         opposite = mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
         tick = await self._run(mt5.symbol_info_tick, pos.symbol)
         price = tick.bid if opposite == mt5.ORDER_TYPE_SELL else tick.ask
+        filling_mode = await self._filling_mode(pos.symbol)
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -305,7 +306,7 @@ class MT5Broker(BrokerInterface):
             "position": pos.ticket,
             "price": price,
             "deviation": 20,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": filling_mode,
         }
         result = await self._run(mt5.order_send, request)
         return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
