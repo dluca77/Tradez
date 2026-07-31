@@ -72,6 +72,24 @@ class AutonomousTradingController:
     async def startup(self) -> None:
         await self.recovery.recover()
         self.safety.mark_data_received()
+
+        # The session baselines must reflect the REAL broker's actual
+        # starting equity, not cfg.starting_balance (a mock/papertrading
+        # assumption of 10000). Against a real account with a different
+        # balance (e.g. a 100000 MT5 demo account), comparing live equity
+        # to the config's 10000 baseline produced a bogus "900% daily
+        # profit" reading that immediately tripped the profit-lock and
+        # blocked every trade from the first cycle onward.
+        try:
+            account = await self.broker.get_account_info()
+            self.state.day_start_equity = account.equity
+            self.state.week_start_equity = account.equity
+            self.state.month_start_equity = account.equity
+            self.state.peak_equity = account.equity
+            self.state.day_peak_equity = account.equity
+        except Exception as exc:  # noqa: BLE001
+            log.error("controller.startup_equity_fetch_failed", error=str(exc))
+
         log.info("controller.started", mode=self.cfg.mode)
 
     async def run_forever(self, interval_seconds: int = 15) -> None:
