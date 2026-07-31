@@ -185,6 +185,21 @@ class MT5Broker(BrokerInterface):
         lots = max(info.volume_min, min(info.volume_max, lots))
         return round(lots, 2)
 
+    async def _filling_mode(self, symbol: str) -> int:
+        # Not every broker/symbol accepts ORDER_FILLING_IOC — some only
+        # support FOK or "Return" (retcode 10030 "Unsupported filling
+        # mode" otherwise). symbol_info().filling_mode is a bitmask of
+        # what this specific symbol allows; pick a mode it actually
+        # supports instead of hardcoding IOC everywhere.
+        mt5 = self.mt5
+        info = await self._run(mt5.symbol_info, symbol)
+        modes = getattr(info, "filling_mode", 0) if info else 0
+        if modes & 1:  # SYMBOL_FILLING_FOK
+            return mt5.ORDER_FILLING_FOK
+        if modes & 2:  # SYMBOL_FILLING_IOC
+            return mt5.ORDER_FILLING_IOC
+        return mt5.ORDER_FILLING_RETURN
+
     async def place_order(
         self,
         instrument: str,
@@ -199,6 +214,7 @@ class MT5Broker(BrokerInterface):
         mt5 = self.mt5
 
         volume = await self._to_broker_volume(symbol, quantity)
+        filling_mode = await self._filling_mode(symbol)
 
         action = mt5.TRADE_ACTION_DEAL if order_type == OrderType.MARKET else mt5.TRADE_ACTION_PENDING
         type_map = {
@@ -217,7 +233,7 @@ class MT5Broker(BrokerInterface):
             "volume": volume,
             "type": mt5_type,
             "deviation": 20,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": filling_mode,
             "type_time": mt5.ORDER_TIME_GTC,
         }
         if price is not None and order_type != OrderType.MARKET:

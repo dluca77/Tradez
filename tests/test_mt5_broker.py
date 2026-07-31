@@ -45,7 +45,9 @@ def _make_fake_mt5():
     fake.TRADE_ACTION_DEAL = 1
     fake.TRADE_ACTION_PENDING = 5
     fake.TRADE_ACTION_SLTP = 6
+    fake.ORDER_FILLING_FOK = 0
     fake.ORDER_FILLING_IOC = 1
+    fake.ORDER_FILLING_RETURN = 2
     fake.ORDER_TIME_GTC = 0
     fake.TRADE_RETCODE_DONE = 10009
     fake.TIMEFRAME_M1 = 1
@@ -61,7 +63,8 @@ def _make_fake_mt5():
     fake.positions_get = lambda **kwargs: (_FakePosition(),)
     fake.symbol_info_tick = lambda symbol: _FakeTick()
     fake.symbol_info = lambda symbol: types.SimpleNamespace(
-        visible=True, trade_contract_size=100000, volume_step=0.01, volume_min=0.01, volume_max=100.0
+        visible=True, trade_contract_size=100000, volume_step=0.01, volume_min=0.01, volume_max=100.0,
+        filling_mode=2,  # SYMBOL_FILLING_IOC
     )
     fake.symbol_select = lambda symbol, enable: True
     fake.last_error = lambda: "no error"
