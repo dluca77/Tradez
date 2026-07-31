@@ -147,6 +147,18 @@ class AutonomousTradingController:
             self.optimizer.state.min_confidence,
         )
 
+        # Heartbeat: without this, a cycle where nothing qualifies produces
+        # zero log output, which reads as "the bot stopped" even though it
+        # is scanning and correctly waiting for a good enough setup.
+        best_score = max((c.signal.confidence for c in candidates), default=0.0)
+        log.info(
+            "controller.scan_result",
+            candidates_found=len(candidates),
+            best_confidence=round(best_score, 1),
+            min_confidence_required=min_conf,
+            open_positions=len(open_positions),
+        )
+
         for candidate in candidates:
             signal = candidate.signal
             if signal.confidence < min_conf:
