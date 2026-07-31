@@ -77,7 +77,14 @@ class SelfOptimizationModule:
                 self.db.log_parameter_change("min_confidence", old, new, "strong recent performance")
                 changes.append(f"lowered min confidence {old:.0f} -> {new:.0f}")
 
-        # Reduce overall risk multiplier (never increase) if profit factor is bad.
+        # Reduce risk multiplier if profit factor is bad, but let it recover
+        # (never above the 1.0 baseline) once performance has genuinely
+        # turned around — otherwise a multiplier walked down to its floor
+        # by old/stale results stayed pinned there forever, with no way
+        # back up even after a long stretch of real, proven good trades.
+        # This is not martingale: it only ever climbs back toward the
+        # original 1.0 baseline, never above it, and only in response to
+        # an already-positive track record, never after losses.
         if perf.profit_factor < 1.0:
             old = self.state.risk_multiplier
             new = max(old - MAX_RISK_STEP, RISK_MULTIPLIER_FLOOR)
@@ -85,6 +92,13 @@ class SelfOptimizationModule:
                 self.state.risk_multiplier = new
                 self.db.log_parameter_change("risk_multiplier", old, new, "profit factor below 1.0")
                 changes.append(f"reduced risk multiplier {old:.2f} -> {new:.2f}")
+        elif perf.profit_factor > 1.2 and perf.win_rate > 0.5:
+            old = self.state.risk_multiplier
+            new = min(old + MAX_RISK_STEP, 1.0)
+            if new != old:
+                self.state.risk_multiplier = new
+                self.db.log_parameter_change("risk_multiplier", old, new, "profit factor recovered above 1.2")
+                changes.append(f"restored risk multiplier {old:.2f} -> {new:.2f}")
 
         self.db.save_optimization_state(
             min_confidence=self.state.min_confidence,
