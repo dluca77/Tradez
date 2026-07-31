@@ -19,9 +19,13 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+import structlog
+
 from tradingbot.broker.base import AccountInfo, BrokerInterface, QuoteTick
 from tradingbot.config import env
 from tradingbot.models import Candle, Direction, Order, OrderType, Position, TakeProfitLevel
+
+log = structlog.get_logger(__name__)
 
 # MT5 symbol names are broker-specific; brokers commonly append a suffix
 # (e.g. "EURUSD.m", "XAUUSDm"). Override per-symbol via MT5_SYMBOL_SUFFIX
@@ -164,6 +168,23 @@ class MT5Broker(BrokerInterface):
             for r in rates
         ]
 
+    async def _to_broker_volume(self, symbol: str, quantity: float) -> float:
+        # tradingbot's position sizing computes `quantity` in underlying
+        # units (e.g. troy ounces for XAUUSD, base-currency units for FX)
+        # such that quantity * stop_distance == risk_amount. MT5 instead
+        # expects `volume` in LOTS, sized per the symbol's contract size and
+        # snapped to its volume_step within [volume_min, volume_max] —
+        # sending raw units (e.g. "42908" for USDCHF) is a wildly invalid
+        # volume and MT5 rejects the order outright.
+        info = await self._run(self.mt5.symbol_info, symbol)
+        if info is None or not info.trade_contract_size:
+            return quantity
+        lots = quantity / info.trade_contract_size
+        step = info.volume_step or 0.01
+        lots = round(lots / step) * step
+        lots = max(info.volume_min, min(info.volume_max, lots))
+        return round(lots, 2)
+
     async def place_order(
         self,
         instrument: str,
@@ -176,6 +197,8 @@ class MT5Broker(BrokerInterface):
     ) -> Order:
         symbol = self._symbol(instrument)
         mt5 = self.mt5
+
+        volume = await self._to_broker_volume(symbol, quantity)
 
         action = mt5.TRADE_ACTION_DEAL if order_type == OrderType.MARKET else mt5.TRADE_ACTION_PENDING
         type_map = {
@@ -191,7 +214,7 @@ class MT5Broker(BrokerInterface):
         request = {
             "action": action,
             "symbol": symbol,
-            "volume": quantity,
+            "volume": volume,
             "type": mt5_type,
             "deviation": 20,
             "type_filling": mt5.ORDER_FILLING_IOC,
@@ -206,6 +229,20 @@ class MT5Broker(BrokerInterface):
 
         result = await self._run(mt5.order_send, request)
         filled = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+        if not filled:
+            # order_send() can return a result object even on rejection —
+            # its retcode/comment say exactly why (invalid volume, market
+            # closed, no money, requote, etc). Without logging these, a
+            # rejected order looks identical to a total mystery in the
+            # terminal.
+            log.error(
+                "mt5.order_rejected",
+                symbol=symbol,
+                volume=volume,
+                retcode=getattr(result, "retcode", None),
+                comment=getattr(result, "comment", None),
+                request=request,
+            )
 
         return Order(
             id=str(result.order) if result else "",
