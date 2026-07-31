@@ -32,12 +32,22 @@ class SelfOptimizationModule:
         self.db = db
         self.min_sample_size = min_sample_size
         self.state = OptimizationState()
+        self._last_evaluated_trades = 0
 
     def optimize(self, perf: PerformanceSummary) -> list[str]:
         changes: list[str] = []
 
         if perf.total_trades < self.min_sample_size:
             return changes
+
+        # Only react once per newly closed trade, not on every scan cycle.
+        # Without this, the exact same overall stats (e.g. profit_factor
+        # still < 1.0 from an old trade) got re-penalized every ~15s scan,
+        # walking risk_multiplier down to its floor within minutes even
+        # though nothing new had actually happened.
+        if perf.total_trades == self._last_evaluated_trades:
+            return changes
+        self._last_evaluated_trades = perf.total_trades
 
         # Disable strategies with a poor track record and enough samples.
         for name, stats in perf.by_strategy.items():
