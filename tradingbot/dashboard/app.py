@@ -39,14 +39,18 @@ TEMPLATE = """<!doctype html>
     font-size: .78rem; text-transform: uppercase; letter-spacing: .04em;
     color: #7d8896; margin-bottom: 8px; font-weight: 600;
   }}
-  .grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+  html, body {{ overflow-x: hidden; width: 100%; }}
+  .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }}
   .card {{
     background: #151a24; border: 1px solid #232a38; border-radius: 14px;
-    padding: 14px;
+    padding: 14px; min-width: 0;
   }}
   .card .label {{ color: #7d8896; font-size: .75rem; margin-bottom: 4px; }}
-  .card .value {{ font-size: 1.5rem; font-weight: 700; line-height: 1.15; }}
-  .card .sub {{ font-size: .8rem; color: #7d8896; margin-top: 2px; }}
+  .card .value {{ font-size: 1.5rem; font-weight: 700; line-height: 1.15; overflow-wrap: break-word; word-break: break-word; }}
+  .card .sub {{ font-size: .8rem; color: #7d8896; margin-top: 2px; overflow-wrap: break-word; }}
+  @media (max-width: 380px) {{
+    .card .value {{ font-size: 1.25rem; }}
+  }}
   .pos {{ color: #3ddc84; }} .neg {{ color: #ff6b6b; }} .neutral {{ color: #e8ebf0; }}
   .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
   table {{ width: 100%; border-collapse: collapse; font-size: .85rem; }}
@@ -60,7 +64,7 @@ TEMPLATE = """<!doctype html>
   .dir-short {{ color: #ff6b6b; font-weight: 600; }}
   .btn-row {{ display: flex; flex-wrap: wrap; gap: 8px; }}
   button {{
-    flex: 1; min-width: 130px; padding: 12px; border-radius: 10px; border: none;
+    flex: 1 1 130px; min-width: 0; padding: 12px; border-radius: 10px; border: none;
     font-size: .85rem; font-weight: 600; color: #e8ebf0; cursor: pointer;
   }}
   .btn-pause {{ background: #2a2f3d; }}
@@ -313,6 +317,7 @@ HISTORY_TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   * {{ box-sizing: border-box; }}
+  html, body {{ overflow-x: hidden; width: 100%; }}
   body {{
     font-family: -apple-system, system-ui, sans-serif;
     background: #0b0e14; color: #e8ebf0; margin: 0;
@@ -323,7 +328,7 @@ HISTORY_TEMPLATE = """<!doctype html>
   a {{ color: #6fb3ff; text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
   .back {{ display: inline-block; margin-bottom: 14px; font-size: .85rem; }}
-  .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; }}
+  .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; max-width: 100%; }}
   table {{ width: 100%; border-collapse: collapse; font-size: .82rem; white-space: nowrap; }}
   th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid #232a38; position: sticky; top: 0; background: #0b0e14; }}
   td {{ padding: 8px 10px; border-bottom: 1px solid #1c2330; }}
