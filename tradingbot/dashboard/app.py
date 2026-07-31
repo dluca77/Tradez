@@ -48,10 +48,14 @@ TEMPLATE = """<!doctype html>
   .card .value {{ font-size: 1.5rem; font-weight: 700; line-height: 1.15; }}
   .card .sub {{ font-size: .8rem; color: #7d8896; margin-top: 2px; }}
   .pos {{ color: #3ddc84; }} .neg {{ color: #ff6b6b; }} .neutral {{ color: #e8ebf0; }}
+  .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
   table {{ width: 100%; border-collapse: collapse; font-size: .85rem; }}
-  th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 6px 4px; border-bottom: 1px solid #232a38; }}
-  td {{ padding: 8px 4px; border-bottom: 1px solid #1c2330; }}
+  th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 6px 4px; border-bottom: 1px solid #232a38; white-space: nowrap; }}
+  td {{ padding: 8px 4px; border-bottom: 1px solid #1c2330; white-space: nowrap; }}
   .empty {{ color: #5a6472; font-size: .85rem; padding: 10px 4px; }}
+  .dimmed {{ color: #7d8896; }}
+  .view-all {{ display: inline-block; margin-top: 10px; font-size: .82rem; color: #6fb3ff; text-decoration: none; }}
+  .view-all:hover {{ text-decoration: underline; }}
   .dir-long {{ color: #3ddc84; font-weight: 600; }}
   .dir-short {{ color: #ff6b6b; font-weight: 600; }}
   .btn-row {{ display: flex; flex-wrap: wrap; gap: 8px; }}
@@ -159,7 +163,7 @@ TEMPLATE = """<!doctype html>
 
 <section>
   <div class="section-title">Open posities</div>
-  {positions_table}
+  <div class="table-scroll">{positions_table}</div>
 </section>
 
 <section>
@@ -169,7 +173,8 @@ TEMPLATE = """<!doctype html>
 
 <section>
   <div class="section-title">Recent gesloten trades</div>
-  {recent_trades_table}
+  <div class="table-scroll">{recent_trades_table}</div>
+  <a class="view-all" href="/geschiedenis">Bekijk volledige geschiedenis met datum &amp; tijd &rarr;</a>
 </section>
 
 <section>
@@ -287,7 +292,66 @@ TRADE_ROW = """<tr>
   <td>{strategy}</td>
   <td class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
   <td>{exit_reason}</td>
+  <td class="dimmed">{closed_at}</td>
 </tr>"""
+
+HISTORY_ROW = """<tr>
+  <td class="dimmed">{opened_at}</td>
+  <td class="dimmed">{closed_at}</td>
+  <td>{instrument}</td>
+  <td class="dir-{direction_class}">{direction_label}</td>
+  <td>{strategy}</td>
+  <td>{entry_price:.5f}</td>
+  <td>{exit_price:.5f}</td>
+  <td class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
+  <td>{r_multiple:+.2f}R</td>
+  <td>{exit_reason}</td>
+</tr>"""
+
+HISTORY_TEMPLATE = """<!doctype html>
+<html><head><title>Handelsgeschiedenis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #0b0e14; color: #e8ebf0; margin: 0;
+    padding: 16px 16px 48px; max-width: 1000px; margin-inline: auto;
+  }}
+  h1 {{ font-size: 1.15rem; font-weight: 600; margin: 4px 0 2px; }}
+  .subtitle {{ color: #7d8896; font-size: .85rem; margin-bottom: 18px; }}
+  a {{ color: #6fb3ff; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .back {{ display: inline-block; margin-bottom: 14px; font-size: .85rem; }}
+  .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: .82rem; white-space: nowrap; }}
+  th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid #232a38; position: sticky; top: 0; background: #0b0e14; }}
+  td {{ padding: 8px 10px; border-bottom: 1px solid #1c2330; }}
+  .dimmed {{ color: #7d8896; }}
+  .empty {{ color: #5a6472; font-size: .85rem; padding: 10px 4px; }}
+  .pos {{ color: #3ddc84; }} .neg {{ color: #ff6b6b; }}
+  .dir-long {{ color: #3ddc84; font-weight: 600; }}
+  .dir-short {{ color: #ff6b6b; font-weight: 600; }}
+  .card {{
+    background: #151a24; border: 1px solid #232a38; border-radius: 14px;
+    padding: 14px; margin-bottom: 16px; font-size: .85rem; color: #9aa4b2;
+  }}
+</style></head>
+<body>
+<a class="back" href="/">&larr; Terug naar dashboard</a>
+<h1>Volledige handelsgeschiedenis</h1>
+<div class="subtitle">Alle gesloten trades, nieuwste eerst &middot; {count} trades totaal</div>
+<div class="card">Totale winst/verlies: <span class="{total_pnl_class}">{total_pnl_sign}&euro;{total_pnl_abs:,.2f}</span> &middot; Win rate: {win_rate:.1f}% &middot; Profit factor: {profit_factor:.2f}</div>
+<div class="table-scroll">
+<table>
+<tr>
+  <th>Geopend</th><th>Gesloten</th><th>Instrument</th><th>Richting</th><th>Strategie</th>
+  <th>Instap</th><th>Uitstap</th><th>Resultaat</th><th>R</th><th>Reden</th>
+</tr>
+{rows}
+</table>
+</div>
+</body></html>"""
 
 CHART_CARD = """<div class="chart-card">
   <div class="chart-title">{instrument} <span class="dir-{direction_class}">{direction_label}</span> &middot; instap {entry_price:.5f}</div>
@@ -302,6 +366,15 @@ CHART_CARD = """<div class="chart-card">
     <canvas class="candles" id="{canvas_id}"></canvas>
   </div>
 </div>"""
+
+
+def _fmt_dt(value: str | None) -> str:
+    if not value:
+        return "-"
+    try:
+        return datetime.fromisoformat(value).strftime("%d-%m %H:%M")
+    except ValueError:
+        return value
 
 
 def _direction_label(direction_value: str) -> tuple[str, str]:
@@ -406,9 +479,10 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
                 strategy=row["strategy"], pnl_class="pos" if pnl >= 0 else "neg",
                 pnl_sign="+" if pnl >= 0 else "-", pnl=abs(pnl),
                 exit_reason=row["exit_reason"] or "-",
+                closed_at=_fmt_dt(row["closed_at"]),
             ))
         recent_trades_table = (
-            "<table><tr><th>Instrument</th><th>Richting</th><th>Strategie</th><th>Resultaat</th><th>Reden</th></tr>"
+            "<table><tr><th>Instrument</th><th>Richting</th><th>Strategie</th><th>Resultaat</th><th>Reden</th><th>Gesloten</th></tr>"
             + "".join(trade_rows) + "</table>"
         ) if trade_rows else '<div class="empty">Nog geen trades afgesloten.</div>'
 
@@ -436,6 +510,40 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             charts_html=charts_html,
             recent_trades_table=recent_trades_table,
             positions_json=json.dumps(positions_for_js),
+        )
+
+    @app.get("/geschiedenis", response_class=HTMLResponse)
+    async def history():
+        perf = compute_performance(controller.db)
+        all_closed = [
+            r for r in controller.db.fetch_closed_trades()
+            if r["exit_reason"] != "reconciliation_broker_missing"
+        ]
+
+        rows = []
+        for row in all_closed:
+            pnl = row["pnl"] or 0.0
+            dclass, dlabel = _direction_label(row["direction"])
+            rows.append(HISTORY_ROW.format(
+                opened_at=_fmt_dt(row["opened_at"]),
+                closed_at=_fmt_dt(row["closed_at"]),
+                instrument=row["instrument"], direction_class=dclass, direction_label=dlabel,
+                strategy=row["strategy"], entry_price=row["entry_price"] or 0.0,
+                exit_price=row["exit_price"] or 0.0,
+                pnl_class="pos" if pnl >= 0 else "neg",
+                pnl_sign="+" if pnl >= 0 else "-", pnl=abs(pnl),
+                r_multiple=row["r_multiple"] or 0.0,
+                exit_reason=row["exit_reason"] or "-",
+            ))
+
+        return HISTORY_TEMPLATE.format(
+            count=len(all_closed),
+            rows="".join(rows) if rows else '<tr><td colspan="10" class="empty">Nog geen trades afgesloten.</td></tr>',
+            total_pnl_class="pos" if perf.total_pnl >= 0 else "neg",
+            total_pnl_sign="+" if perf.total_pnl >= 0 else "-",
+            total_pnl_abs=abs(perf.total_pnl),
+            win_rate=perf.win_rate * 100,
+            profit_factor=perf.profit_factor,
         )
 
     @app.get("/api/status")
