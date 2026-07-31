@@ -62,6 +62,29 @@ TEMPLATE = """<!doctype html>
   .view-all:hover {{ text-decoration: underline; }}
   .dir-long {{ color: #3ddc84; font-weight: 600; }}
   .dir-short {{ color: #ff6b6b; font-weight: 600; }}
+  /* On narrow screens, tables collapse into stacked cards instead of a
+     scrollable wide table — a horizontally-scrolling table is easy to miss
+     entirely on a phone (no visible scrollbar), so rows become their own
+     labeled card that fits the screen without any sideways swipe. */
+  @media (max-width: 640px) {{
+    .table-scroll table, .table-scroll thead, .table-scroll tbody,
+    .table-scroll th, .table-scroll td, .table-scroll tr {{ display: block; }}
+    .table-scroll thead {{ display: none; }}
+    .table-scroll tr {{
+      border: 1px solid #232a38; border-radius: 10px; padding: 4px 10px;
+      margin-bottom: 8px; background: #10141c;
+    }}
+    .table-scroll td {{
+      display: flex; justify-content: space-between; align-items: center;
+      white-space: normal; border-bottom: 1px solid #1c2330; padding: 7px 0;
+      text-align: right;
+    }}
+    .table-scroll td:last-child {{ border-bottom: none; }}
+    .table-scroll td::before {{
+      content: attr(data-label); color: #7d8896; font-weight: 500;
+      text-align: left; padding-right: 10px;
+    }}
+  }}
   .btn-row {{ display: flex; flex-wrap: wrap; gap: 8px; }}
   button {{
     flex: 1 1 130px; min-width: 0; padding: 12px; border-radius: 10px; border: none;
@@ -283,33 +306,33 @@ function toggleChart(canvasId) {{
 </body></html>"""
 
 POSITION_ROW = """<tr>
-  <td>{instrument}</td>
-  <td class="dir-{direction_class}">{direction_label}</td>
-  <td>{entry_price:.5f}</td>
-  <td>{current_price:.5f}</td>
-  <td class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
+  <td data-label="Instrument">{instrument}</td>
+  <td data-label="Richting" class="dir-{direction_class}">{direction_label}</td>
+  <td data-label="Instap">{entry_price:.5f}</td>
+  <td data-label="Nu">{current_price:.5f}</td>
+  <td data-label="Winst/Verlies" class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
 </tr>"""
 
 TRADE_ROW = """<tr>
-  <td>{instrument}</td>
-  <td class="dir-{direction_class}">{direction_label}</td>
-  <td>{strategy}</td>
-  <td class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
-  <td>{exit_reason}</td>
-  <td class="dimmed">{closed_at}</td>
+  <td data-label="Instrument">{instrument}</td>
+  <td data-label="Richting" class="dir-{direction_class}">{direction_label}</td>
+  <td data-label="Strategie">{strategy}</td>
+  <td data-label="Resultaat" class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
+  <td data-label="Reden">{exit_reason}</td>
+  <td data-label="Gesloten" class="dimmed">{closed_at}</td>
 </tr>"""
 
 HISTORY_ROW = """<tr>
-  <td class="dimmed">{opened_at}</td>
-  <td class="dimmed">{closed_at}</td>
-  <td>{instrument}</td>
-  <td class="dir-{direction_class}">{direction_label}</td>
-  <td>{strategy}</td>
-  <td>{entry_price:.5f}</td>
-  <td>{exit_price:.5f}</td>
-  <td class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
-  <td>{r_multiple:+.2f}R</td>
-  <td>{exit_reason}</td>
+  <td data-label="Geopend" class="dimmed">{opened_at}</td>
+  <td data-label="Gesloten" class="dimmed">{closed_at}</td>
+  <td data-label="Instrument">{instrument}</td>
+  <td data-label="Richting" class="dir-{direction_class}">{direction_label}</td>
+  <td data-label="Strategie">{strategy}</td>
+  <td data-label="Instap">{entry_price:.5f}</td>
+  <td data-label="Uitstap">{exit_price:.5f}</td>
+  <td data-label="Resultaat" class="{pnl_class}">{pnl_sign}&euro;{pnl:,.2f}</td>
+  <td data-label="R">{r_multiple:+.2f}R</td>
+  <td data-label="Reden">{exit_reason}</td>
 </tr>"""
 
 HISTORY_TEMPLATE = """<!doctype html>
@@ -330,6 +353,25 @@ HISTORY_TEMPLATE = """<!doctype html>
   .back {{ display: inline-block; margin-bottom: 14px; font-size: .85rem; }}
   .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; max-width: 100%; }}
   table {{ width: 100%; border-collapse: collapse; font-size: .82rem; white-space: nowrap; }}
+  @media (max-width: 640px) {{
+    .table-scroll table, .table-scroll thead, .table-scroll tbody,
+    .table-scroll th, .table-scroll td, .table-scroll tr {{ display: block; }}
+    .table-scroll thead {{ display: none; }}
+    .table-scroll tr {{
+      border: 1px solid #232a38; border-radius: 10px; padding: 4px 10px;
+      margin-bottom: 8px; background: #10141c;
+    }}
+    .table-scroll td {{
+      display: flex; justify-content: space-between; align-items: center;
+      white-space: normal; border-bottom: 1px solid #1c2330; padding: 7px 0;
+      text-align: right;
+    }}
+    .table-scroll td:last-child {{ border-bottom: none; }}
+    .table-scroll td::before {{
+      content: attr(data-label); color: #7d8896; font-weight: 500;
+      text-align: left; padding-right: 10px;
+    }}
+  }}
   th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid #232a38; position: sticky; top: 0; background: #0b0e14; }}
   td {{ padding: 8px 10px; border-bottom: 1px solid #1c2330; }}
   .dimmed {{ color: #7d8896; }}
