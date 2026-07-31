@@ -47,7 +47,7 @@ risk:
   martingale_forbidden: true
 
 confidence:
-  min_confidence_default: 75
+  min_confidence_default: 80
   min_confidence_high_volatility: 85
   min_confidence_drawdown: 90
 
