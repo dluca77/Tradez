@@ -6,18 +6,16 @@ broker:
   account_currency: USD
 
 instruments:
+  # Restricted to what a real-data backtest (run_backtest_check.py, 60d of
+  # real 5m OHLCV) actually showed a viable profit factor (~0.9-1.1+) for.
+  # Every FX pair plus GER40 and XAGUSD came back deeply net-negative
+  # (profit factor 0.28-0.79) over 400-1600 trades each — not noise, a
+  # proven losing edge with this strategy set. Re-add an instrument here
+  # only after a fresh real-data backtest shows it's actually viable.
   enabled:
     - XAUUSD
-    - XAGUSD
-    - EURUSD
-    - GBPUSD
-    - USDJPY
-    - USDCHF
-    - AUDUSD
-    - USDCAD
     - NAS100
     - SPX500
-    - GER40
   crypto_enabled: false
 
 timeframes:
@@ -72,6 +70,15 @@ optimization:
   min_sample_size: 30
   max_confidence_increase_per_cycle: 5
   max_risk_decrease_per_cycle: 0.05
+  # Proven net-negative in the same real-data backtest, across every
+  # instrument tested (not just the ones we dropped above) — momentum_scalping
+  # lost money on all 11 instruments, vwap_reversion had a ~10% win rate on
+  # metals. Disabled unconditionally, independent of the adaptive
+  # self-optimization state (which only disables on live paper-trading
+  # stats and could otherwise silently re-enable these).
+  permanently_disabled_strategies:
+    - momentum_scalping
+    - vwap_reversion
 
 database:
   path: data/tradingbot.db

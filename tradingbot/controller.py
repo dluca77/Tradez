@@ -51,6 +51,9 @@ class AutonomousTradingController:
             channel=cfg.get("notifications", "channel", default="log"),
         )
         self.optimizer = SelfOptimizationModule(self.db, cfg.get("optimization", "min_sample_size", default=30))
+        self.permanently_disabled_strategies = set(
+            cfg.get("optimization", "permanently_disabled_strategies", default=[])
+        )
         self.news_filter = NewsFilter(
             pre_minutes=cfg.get("news", "pre_event_blackout_minutes", default=30),
             post_minutes=cfg.get("news", "post_event_blackout_minutes", default=15),
@@ -241,6 +244,8 @@ class AutonomousTradingController:
             if signal.confidence < min_conf:
                 continue
             if signal.strategy.value in self.optimizer.state.disabled_strategies:
+                continue
+            if signal.strategy.value in self.permanently_disabled_strategies:
                 continue
 
             self.db.log_decision("signal_considered", {
