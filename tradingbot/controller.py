@@ -65,6 +65,7 @@ class AutonomousTradingController:
             day_peak_equity=cfg.starting_balance,
         )
         self._positions_meta: dict[str, dict] = {}  # position_id -> signal metadata
+        self._known_position_ids: set[str] = set()
         self.running = False
         self.paused = False
         self._day_date = datetime.utcnow().date()
@@ -141,6 +142,18 @@ class AutonomousTradingController:
 
         open_positions = await self.broker.get_open_positions()
 
+        # A position can disappear from the broker between polls without
+        # this bot ever calling close_position() itself — MT5 executes
+        # stop-loss/take-profit natively at the server. Without this check,
+        # such a trade is simply lost: never recorded as closed, missing
+        # from "recent closed trades", and not counted for win-rate/streak
+        # tracking.
+        current_ids = {p.id for p in open_positions}
+        vanished_ids = self._known_position_ids - current_ids
+        for trade_id in vanished_ids:
+            await self._record_vanished_trade(trade_id)
+        self._known_position_ids = current_ids
+
         # 16: manage existing positions first every cycle
         await self._manage_open_positions(open_positions)
 
@@ -198,6 +211,44 @@ class AutonomousTradingController:
         changes = self.optimizer.optimize(perf)
         if changes:
             log.info("controller.optimization", changes=changes)
+
+    async def _record_vanished_trade(self, trade_id: str) -> None:
+        local_rows = [row for row in self.db.fetch_open_trades() if row["id"] == trade_id]
+        if not local_rows:
+            return  # nothing we know about locally; nothing to record
+        row = local_rows[0]
+
+        result = await self.broker.get_closed_position_result(trade_id)
+        if result is not None:
+            exit_price, pnl = result
+            direction_mult = 1 if row["direction"] == "long" else -1
+            risk_per_unit = abs(row["entry_price"] - row["stop_loss"]) if row["stop_loss"] else 0.0
+            r_mult = (
+                (exit_price - row["entry_price"]) * direction_mult / risk_per_unit
+                if risk_per_unit else 0.0
+            )
+            exit_reason = "exit_stop_loss" if pnl < 0 else "exit_take_profit"
+        else:
+            # Broker can't tell us what happened (e.g. MockBroker, or a
+            # history lookup failure) — record the closure without
+            # fabricating a P&L rather than silently dropping the trade.
+            exit_price, pnl, r_mult = row["entry_price"], 0.0, 0.0
+            exit_reason = "closed_at_broker_unknown_pnl"
+
+        self.db.record_trade_close(trade_id, exit_price, pnl, r_mult, exit_reason)
+        self.notifications.trade_closed(row["instrument"], pnl, r_mult)
+        if pnl < 0:
+            self.state.consecutive_losses += 1
+        else:
+            self.state.consecutive_losses = 0
+        log.info(
+            "trade.closed_at_broker",
+            trade_id=trade_id,
+            instrument=row["instrument"],
+            pnl=pnl,
+            r_multiple=round(r_mult, 2),
+            exit_reason=exit_reason,
+        )
 
     async def _manage_open_positions(self, open_positions) -> None:
         for pos in open_positions:

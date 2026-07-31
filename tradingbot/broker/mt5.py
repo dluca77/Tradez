@@ -326,5 +326,22 @@ class MT5Broker(BrokerInterface):
         result = await self._run(mt5.order_send, request)
         return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
 
+    async def get_closed_position_result(self, position_id: str) -> tuple[float, float] | None:
+        # MT5 executes stop-loss/take-profit natively at the server — the
+        # position simply vanishes from positions_get() on the next poll,
+        # with no event delivered to this process. history_deals_get(...)
+        # is the only way to learn what actually happened to it (the exit
+        # deal's price and realized profit), which the controller needs to
+        # record a real closed trade instead of losing it entirely.
+        deals = await self._run(self.mt5.history_deals_get, position=int(position_id))
+        if not deals:
+            return None
+        exit_deals = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
+        if not exit_deals:
+            return None
+        last = exit_deals[-1]
+        total_pnl = sum(d.profit + d.swap + d.commission for d in exit_deals)
+        return float(last.price), float(total_pnl)
+
     async def shutdown(self) -> None:
         await self._run(self.mt5.shutdown)

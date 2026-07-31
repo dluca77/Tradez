@@ -74,3 +74,12 @@ class BrokerInterface(ABC):
 
     @abstractmethod
     async def close_position(self, position_id: str, fraction: float = 1.0) -> bool: ...
+
+    async def get_closed_position_result(self, position_id: str) -> tuple[float, float] | None:
+        """Return (close_price, realized_pnl) for a position that closed at
+        the broker WITHOUT this bot initiating the close (e.g. MT5's own
+        stop-loss/take-profit execution happens server-side, invisible to
+        close_position()). Default: unsupported: subclasses that can query
+        deal/trade history should override this. Returning None means the
+        caller must fall back to an approximate/zero record."""
+        return None
