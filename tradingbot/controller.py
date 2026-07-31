@@ -246,6 +246,23 @@ class AutonomousTradingController:
             self.db.log_decision("trade_blocked", {"reason": reason}, instrument=signal.instrument)
             return False
 
+        # Never stack multiple positions in the same instrument. The
+        # correlation penalty below only ever softens position size — it
+        # never blocks outright — so without this, the same repeated
+        # signal (e.g. GBPUSD short at ~unchanged confidence every cycle)
+        # kept opening a new position each cycle instead of managing the
+        # one already open, multiplying exposure to a single idea instead
+        # of diversifying (observed: 5 separate GBPUSD shorts opened within
+        # 2 minutes, all at nearly the same price).
+        if any(p.instrument == signal.instrument for p in open_positions):
+            log.warning(
+                "trade.blocked_duplicate_instrument",
+                instrument=signal.instrument,
+                confidence=signal.confidence,
+            )
+            self.db.log_decision("trade_blocked", {"reason": "duplicate_instrument"}, instrument=signal.instrument)
+            return False
+
         corr_penalty = correlation_penalty(open_positions, signal.direction, signal.instrument)
         total_open_risk_pct = sum(getattr(p, "risk_amount", 0.0) for p in open_positions) / equity if equity else 0.0
 
