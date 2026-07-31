@@ -54,6 +54,12 @@ def load_from_yfinance(instrument: str, period: str = "60d", interval: str = "5m
     if raw.empty:
         raise RuntimeError(f"No data returned for {instrument} ({ticker})")
 
+    # Newer yfinance versions return MultiIndex columns (field, ticker) even
+    # for a single symbol — flatten to plain field names so raw["Open"] etc.
+    # below is a 1-D Series, not a 1-column DataFrame.
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+
     raw = raw.reset_index()
     time_col = "Datetime" if "Datetime" in raw.columns else "Date"
     df = pd.DataFrame({
