@@ -255,12 +255,31 @@ class AutonomousTradingController:
         }, instrument=signal.instrument)
 
         if decision.blocked or decision.risk_pct <= 0:
+            # Made visible in the terminal, not just the database — without
+            # this, a blocked trade with a good-looking confidence score
+            # (e.g. 83) looks like the bot is silently ignoring a clear
+            # opportunity, when it's actually a risk-manager rule doing its
+            # job (cooldown, max positions, drawdown, etc).
+            log.warning(
+                "trade.blocked_by_risk_manager",
+                instrument=signal.instrument,
+                confidence=signal.confidence,
+                block_reason=decision.block_reason,
+                reasons=decision.reasons,
+            )
             if decision.block_reason in ("max_drawdown", "daily_loss_limit", "weekly_loss_limit"):
                 self.notifications.risk_limit_hit(decision.block_reason)
             return False
 
         sizing = calculate_position_size(signal.instrument, equity, decision.risk_pct, signal.entry_price, signal.stop_loss)
         if sizing.lots_or_units <= 0:
+            log.warning(
+                "trade.blocked_zero_size",
+                instrument=signal.instrument,
+                risk_pct=decision.risk_pct,
+                entry_price=signal.entry_price,
+                stop_loss=signal.stop_loss,
+            )
             return False
 
         costs = estimate_costs(signal.instrument, sizing.lots_or_units, quote.spread)
