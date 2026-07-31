@@ -5,6 +5,7 @@ Run alongside the controller in the same process (see run_paper.py).
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -70,6 +71,13 @@ TEMPLATE = """<!doctype html>
   .chart-title {{ font-size: .85rem; margin-bottom: 6px; }}
   .chart-title .dir-long, .chart-title .dir-short {{ margin: 0 4px; }}
   canvas.candles {{ width: 100%; height: 160px; display: block; }}
+  .chart-meta {{ font-size: .78rem; color: #9aa4b2; margin-top: 8px; line-height: 1.5; }}
+  .chart-meta b {{ color: #e8ebf0; }}
+  .chart-meta .next-step {{ color: #6fb3ff; }}
+  .chart-toggle {{
+    margin-top: 10px; width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #2a3040;
+    background: transparent; color: #9aa4b2; font-size: .8rem; font-weight: 600; cursor: pointer;
+  }}
   #toast {{
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: #1d3a2a; color: #3ddc84; padding: 10px 18px; border-radius: 10px;
@@ -155,7 +163,7 @@ TEMPLATE = """<!doctype html>
 </section>
 
 <section>
-  <div class="section-title">Live grafieken (5-minuten candles, met instapprijs)</div>
+  <div class="section-title">Live grafieken &amp; exit-plan per positie</div>
   {charts_html}
 </section>
 
@@ -244,7 +252,24 @@ async function loadChart(instrument, entry, direction, canvasId) {{
 }}
 
 const openPositionsForCharts = {positions_json};
-openPositionsForCharts.forEach(p => loadChart(p.instrument, p.entry, p.direction, p.canvas_id));
+
+function toggleChart(canvasId) {{
+  const wrap = document.getElementById('wrap-' + canvasId);
+  const btn = document.getElementById('btn-' + canvasId);
+  const isHidden = wrap.style.display === 'none' || wrap.style.display === '';
+  if (isHidden) {{
+    wrap.style.display = 'block';
+    btn.textContent = 'Verberg grafiek';
+    if (!wrap.dataset.loaded) {{
+      const p = openPositionsForCharts.find(p => p.canvas_id === canvasId);
+      if (p) loadChart(p.instrument, p.entry, p.direction, canvasId);
+      wrap.dataset.loaded = '1';
+    }}
+  }} else {{
+    wrap.style.display = 'none';
+    btn.textContent = 'Toon grafiek';
+  }}
+}}
 </script>
 </body></html>"""
 
@@ -266,7 +291,16 @@ TRADE_ROW = """<tr>
 
 CHART_CARD = """<div class="chart-card">
   <div class="chart-title">{instrument} <span class="dir-{direction_class}">{direction_label}</span> &middot; instap {entry_price:.5f}</div>
-  <canvas class="candles" id="{canvas_id}"></canvas>
+  <div class="chart-meta">
+    <b>Strategie:</b> {strategy}<br>
+    <b>Huidig niveau:</b> {r_multiple:+.2f}R ({pnl_sign}&euro;{pnl:,.2f})<br>
+    <b>Volgende stap:</b> <span class="next-step">{next_step}</span><br>
+    <b>Uiterlijk gesloten over:</b> {time_left}
+  </div>
+  <button id="btn-{canvas_id}" class="chart-toggle" onclick="toggleChart('{canvas_id}')">Toon grafiek</button>
+  <div id="wrap-{canvas_id}" style="display:none; margin-top:8px;">
+    <canvas class="candles" id="{canvas_id}"></canvas>
+  </div>
 </div>"""
 
 
@@ -274,6 +308,16 @@ def _direction_label(direction_value: str) -> tuple[str, str]:
     if direction_value == Direction.LONG.value:
         return "long", "Long"
     return "short", "Short"
+
+
+def _next_step_text(r_multiple: float, breakeven_moved: bool, trailing_active: bool) -> str:
+    if r_multiple < 1.0:
+        return f"Break-even (stop naar instap) bij 1R &mdash; nu op {r_multiple:.2f}R"
+    if r_multiple < 1.5:
+        return "30% van de positie wordt verkocht bij 1,5R winst"
+    if r_multiple < 2.0:
+        return "Nog eens 30% wordt verkocht bij 2R winst"
+    return "Restant volgt een meebewegende (trailing) stop-loss"
 
 
 def create_app(controller: AutonomousTradingController) -> FastAPI:
@@ -285,6 +329,9 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
         positions = await controller.broker.get_open_positions()
         perf = compute_performance(controller.db)
         starting_balance = controller.cfg.starting_balance
+        max_hold = controller.position_manager.max_hold
+
+        open_trade_meta = {row["id"]: row for row in controller.db.fetch_open_trades()}
 
         equity_change_pct = ((account.equity - account.balance) / account.balance * 100) if account.balance else 0.0
         total_pnl_pct = (perf.total_pnl / starting_balance * 100) if starting_balance else 0.0
@@ -306,10 +353,35 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
                 entry_price=pos.entry_price, current_price=current_price,
                 pnl_class="pos" if pnl >= 0 else "neg", pnl_sign="+" if pnl >= 0 else "-", pnl=abs(pnl),
             ))
+
+            risk_per_unit = abs(pos.entry_price - pos.initial_stop_loss)
+            r_multiple = ((current_price - pos.entry_price) * direction_mult / risk_per_unit) if risk_per_unit else 0.0
+            next_step = _next_step_text(r_multiple, pos.breakeven_moved, pos.trailing_active)
+
+            meta_row = open_trade_meta.get(pos.id)
+            strategy_label = meta_row["strategy"] if meta_row else "onbekend"
+            opened_at_str = meta_row["opened_at"] if meta_row else None
+            time_left = "onbekend"
+            if opened_at_str:
+                try:
+                    opened_at = datetime.fromisoformat(opened_at_str)
+                    elapsed = datetime.utcnow() - opened_at
+                    remaining = max_hold - elapsed
+                    if remaining.total_seconds() > 0:
+                        mins = int(remaining.total_seconds() // 60)
+                        time_left = f"{mins} min (tijdslimiet)"
+                    else:
+                        time_left = "nu (tijdslimiet bereikt)"
+                except ValueError:
+                    pass
+
             canvas_id = f"chart-{idx}-{pos.instrument}"
             chart_cards.append(CHART_CARD.format(
                 instrument=pos.instrument, direction_class=dclass, direction_label=dlabel,
                 entry_price=pos.entry_price, canvas_id=canvas_id,
+                strategy=strategy_label, r_multiple=r_multiple,
+                pnl_sign="+" if pnl >= 0 else "-", pnl=abs(pnl),
+                next_step=next_step, time_left=time_left,
             ))
             positions_for_js.append({
                 "instrument": pos.instrument, "entry": pos.entry_price,
