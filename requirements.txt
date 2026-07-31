@@ -10,3 +10,4 @@ structlog>=24.1
 apscheduler>=3.10
 pytest>=8.0
 pytest-asyncio>=0.23
+yfinance>=0.2
