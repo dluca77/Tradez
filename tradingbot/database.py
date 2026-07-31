@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS session_state (
     risk_scale REAL NOT NULL,
     day_date TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS optimization_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    min_confidence REAL NOT NULL,
+    disabled_strategies TEXT NOT NULL,
+    risk_multiplier REAL NOT NULL,
+    last_evaluated_trades INTEGER NOT NULL
+);
 """
 
 
@@ -180,4 +188,37 @@ class Database:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute("SELECT * FROM session_state WHERE id = 1")
+            return cur.fetchone()
+
+    def save_optimization_state(
+        self,
+        min_confidence: float,
+        disabled_strategies: set[str],
+        risk_multiplier: float,
+        last_evaluated_trades: int,
+    ) -> None:
+        # Same reasoning as save_session_state: without persisting this, a
+        # restart silently reset risk_multiplier/min_confidence/disabled
+        # strategies back to their defaults, discarding tightening the bot
+        # had deliberately applied based on real historical performance.
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO optimization_state
+                   (id, min_confidence, disabled_strategies, risk_multiplier, last_evaluated_trades)
+                   VALUES (1, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       min_confidence=excluded.min_confidence,
+                       disabled_strategies=excluded.disabled_strategies,
+                       risk_multiplier=excluded.risk_multiplier,
+                       last_evaluated_trades=excluded.last_evaluated_trades""",
+                (
+                    min_confidence, json.dumps(sorted(disabled_strategies)),
+                    risk_multiplier, last_evaluated_trades,
+                ),
+            )
+
+    def load_optimization_state(self) -> sqlite3.Row | None:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute("SELECT * FROM optimization_state WHERE id = 1")
             return cur.fetchone()

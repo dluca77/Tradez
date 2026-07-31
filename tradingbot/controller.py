@@ -116,6 +116,14 @@ class AutonomousTradingController:
                 trades_today=self.state.trades_today,
             )
 
+        self.optimizer.restore()
+        log.info(
+            "controller.optimization_state_restored",
+            min_confidence=self.optimizer.state.min_confidence,
+            risk_multiplier=self.optimizer.state.risk_multiplier,
+            disabled_strategies=sorted(self.optimizer.state.disabled_strategies),
+        )
+
         log.info("controller.started", mode=self.cfg.mode)
 
     async def run_forever(self, interval_seconds: int = 15) -> None:

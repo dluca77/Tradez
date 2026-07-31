@@ -7,6 +7,7 @@ to reach from this module because it only exposes bounded setters.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from tradingbot.database import Database
@@ -85,4 +86,22 @@ class SelfOptimizationModule:
                 self.db.log_parameter_change("risk_multiplier", old, new, "profit factor below 1.0")
                 changes.append(f"reduced risk multiplier {old:.2f} -> {new:.2f}")
 
+        self.db.save_optimization_state(
+            min_confidence=self.state.min_confidence,
+            disabled_strategies=self.state.disabled_strategies,
+            risk_multiplier=self.state.risk_multiplier,
+            last_evaluated_trades=self._last_evaluated_trades,
+        )
         return changes
+
+    def restore(self) -> None:
+        """Reload optimization state persisted before the last shutdown, so a
+        restart doesn't silently undo tightening (or disabled strategies)
+        the module had applied based on real historical performance."""
+        row = self.db.load_optimization_state()
+        if not row:
+            return
+        self.state.min_confidence = row["min_confidence"]
+        self.state.disabled_strategies = set(json.loads(row["disabled_strategies"]))
+        self.state.risk_multiplier = row["risk_multiplier"]
+        self._last_evaluated_trades = row["last_evaluated_trades"]
