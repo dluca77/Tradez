@@ -24,6 +24,7 @@ YAHOO_TICKERS = {
     "NAS100": "^NDX",
     "SPX500": "^GSPC",
     "GER40": "^GDAXI",
+    "USOIL": "CL=F",
 }
 
 

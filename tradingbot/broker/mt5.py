@@ -35,6 +35,10 @@ MT5_SYMBOL_MAP = {
     "EURUSD": "EURUSD", "GBPUSD": "GBPUSD", "USDJPY": "USDJPY",
     "USDCHF": "USDCHF", "AUDUSD": "AUDUSD", "USDCAD": "USDCAD",
     "NAS100": "NAS100", "SPX500": "SP500", "GER40": "GER40",
+    # WTI crude oil naming varies a lot by broker (XTIUSD, USOIL, WTI, CL,
+    # OIL.WTI...) — check your MT5 Market Watch and override here or via
+    # MT5_SYMBOL_SUFFIX if this doesn't match what your broker lists.
+    "USOIL": "XTIUSD",
 }
 
 # tradingbot timeframe string -> MetaTrader5 TIMEFRAME_* constant name
