@@ -5,9 +5,11 @@ with broker.name: mt5) — this pulls candles directly from the terminal via
 the same MetaTrader5 package, which is your broker's actual historical
 price/spread data rather than Yahoo Finance's free feed.
 
-Before running, open a chart for each instrument at M5 in the MT5 terminal
-at least once — that makes the terminal download/cache full history for it;
-otherwise copy_rates_from_pos may only return a short recent window.
+Pulls a full year of M5 history per instrument. Before running, open a chart
+for each instrument at M5 in the MT5 terminal and scroll back to the start
+of the year (e.g. press Home, or scroll-wheel back repeatedly) — that makes
+the terminal download/cache the full year; otherwise copy_rates_range may
+only return whatever short recent window is already cached locally.
 
 Usage:
     python run_mt5_backtest.py
@@ -15,7 +17,7 @@ Usage:
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -24,12 +26,19 @@ from tradingbot.broker.mt5 import MT5_SYMBOL_MAP, _TIMEFRAME_NAMES, _import_mt5
 from tradingbot.config import env, load_config
 from tradingbot.data_loader import resample
 
-BARS_TO_FETCH = 20_000  # ~ a few months of M5 bars, depending on the instrument's session hours
+LOOKBACK_DAYS = 365  # how far back to pull M5 history for the backtest
 
 
-def fetch_mt5_candles(mt5, symbol: str, timeframe_name: str, count: int) -> pd.DataFrame:
+def fetch_mt5_candles(mt5, symbol: str, timeframe_name: str, lookback_days: int) -> pd.DataFrame:
+    # copy_rates_range() pulls an exact calendar range rather than a fixed
+    # bar count, so "1 year" means the same thing regardless of how many
+    # M5 bars that instrument's session hours actually produce (indices
+    # trade far fewer hours/week than FX, so a fixed bar count would cover
+    # very different real time spans per instrument).
     tf_const = getattr(mt5, _TIMEFRAME_NAMES.get(timeframe_name, "TIMEFRAME_M5"))
-    rates = mt5.copy_rates_from_pos(symbol, tf_const, 0, count)
+    date_to = datetime.now(timezone.utc)
+    date_from = date_to - timedelta(days=lookback_days)
+    rates = mt5.copy_rates_range(symbol, tf_const, date_from, date_to)
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"No data returned for {symbol}: {mt5.last_error()}")
     df = pd.DataFrame(rates)
@@ -73,13 +82,14 @@ def main() -> None:
             mt5.symbol_select(symbol, True)
 
         try:
-            df_exec = fetch_mt5_candles(mt5, symbol, "M5", BARS_TO_FETCH)
+            df_exec = fetch_mt5_candles(mt5, symbol, "M5", LOOKBACK_DAYS)
         except Exception as exc:  # noqa: BLE001
             print(f"{instrument:<10} skipped ({exc})")
             continue
 
         if len(df_exec) < 100:
-            print(f"{instrument:<10} skipped (only {len(df_exec)} bars — open its M5 chart in MT5 first)")
+            print(f"{instrument:<10} skipped (only {len(df_exec)} bars — open its M5 chart in MT5 first, "
+                  f"scroll back to load a year of history, then rerun)")
             continue
 
         df_ctx = resample(df_exec, "1h")
