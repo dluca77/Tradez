@@ -139,3 +139,4 @@ class Position:
     trailing_active: bool = False
     r_multiple_realized: float = 0.0
     reason: str = ""
+    realized_pnl: float = 0.0  # pnl already banked from partial closes, before the final exit

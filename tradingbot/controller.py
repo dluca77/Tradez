@@ -329,7 +329,12 @@ class AutonomousTradingController:
                 if action.action.startswith("exit"):
                     entry = pos.entry_price
                     direction_mult = 1 if pos.direction == Direction.LONG else -1
-                    pnl = (current_price - entry) * direction_mult * pos.initial_quantity
+                    # Use the REMAINING quantity for this final leg, plus
+                    # whatever was already realized by earlier partial
+                    # closes — using initial_quantity here would apply the
+                    # final price to the whole original size, silently
+                    # discarding profit already locked in at 1.5R/2R.
+                    pnl = pos.realized_pnl + (current_price - entry) * direction_mult * pos.quantity
                     r_mult = (current_price - entry) * direction_mult / abs(entry - pos.initial_stop_loss) if pos.initial_stop_loss != entry else 0.0
                     self.db.record_trade_close(pos.id, current_price, pnl, r_mult, action.action)
                     self.notifications.trade_closed(pos.instrument, pnl, r_mult)

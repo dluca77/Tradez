@@ -83,13 +83,23 @@ class PositionManagementEngine:
                 pos.breakeven_moved = True
                 actions.append(ManagementAction("breakeven", f"stop moved to entry at {r:.2f}R"))
 
-        # 2) Partial profit taking at 1.5R and 2R
+        # 2) Partial profit taking at 1.5R and 2R. Bank the realized pnl of
+        # each partial onto the position so the final close (which only
+        # ever sees the REMAINING quantity) doesn't lose track of profit
+        # already locked in — without this, a trade that took real profit
+        # at 1.5R/2R and then trailed back down before its final exit
+        # recorded as a small win or even a loss, because only the last
+        # leg's price move was ever counted.
         if r >= 1.5 and pos.quantity > pos.initial_quantity * 0.55:
+            close_qty = pos.quantity * (0.3 / (pos.quantity / pos.initial_quantity))
             await self.broker.close_position(pos.id, fraction=0.3 / (pos.quantity / pos.initial_quantity))
+            pos.realized_pnl += (current_price - pos.entry_price) * direction_mult * close_qty
             pos.quantity *= 0.7
             actions.append(ManagementAction("partial_close", f"closed 30% at {r:.2f}R"))
         elif r >= 2.0 and pos.quantity > pos.initial_quantity * 0.25:
+            close_qty = pos.quantity * (0.3 / (pos.quantity / pos.initial_quantity))
             await self.broker.close_position(pos.id, fraction=0.3 / (pos.quantity / pos.initial_quantity))
+            pos.realized_pnl += (current_price - pos.entry_price) * direction_mult * close_qty
             pos.quantity *= 0.7
             actions.append(ManagementAction("partial_close", f"closed additional 30% at {r:.2f}R"))
 
