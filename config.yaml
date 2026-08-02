@@ -84,6 +84,14 @@ optimization:
   permanently_disabled_strategies:
     - momentum_scalping
     - vwap_reversion
+  # Per-instrument strategy allowlist, evidence-based from real-data
+  # backtests. Leave an instrument out (or give it an empty list) to
+  # apply no restriction beyond permanently_disabled_strategies above.
+  # Example, once the next backtest round confirms per-instrument edges:
+  # instrument_strategies:
+  #   XAUUSD: [trend_following, breakout]
+  #   XAGUSD: [support_resistance]
+  instrument_strategies: {}
 
 database:
   path: data/tradingbot.db

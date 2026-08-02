@@ -54,6 +54,14 @@ class AutonomousTradingController:
         self.permanently_disabled_strategies = set(
             cfg.get("optimization", "permanently_disabled_strategies", default=[])
         )
+        # Per-instrument strategy allowlist, evidence-based from real-data
+        # backtests (e.g. breakout worked on XAUUSD but not XAGUSD/AUDUSD).
+        # Empty/missing for an instrument means "no restriction beyond the
+        # global permanently_disabled_strategies list above".
+        self.instrument_allowed_strategies: dict[str, set[str]] = {
+            instrument: set(strategies)
+            for instrument, strategies in cfg.get("optimization", "instrument_strategies", default={}).items()
+        }
         self.news_filter = NewsFilter(
             pre_minutes=cfg.get("news", "pre_event_blackout_minutes", default=30),
             post_minutes=cfg.get("news", "post_event_blackout_minutes", default=15),
@@ -247,6 +255,9 @@ class AutonomousTradingController:
             if signal.strategy.value in self.optimizer.state.disabled_strategies:
                 continue
             if signal.strategy.value in self.permanently_disabled_strategies:
+                continue
+            allowed_for_instrument = self.instrument_allowed_strategies.get(signal.instrument)
+            if allowed_for_instrument and signal.strategy.value not in allowed_for_instrument:
                 continue
 
             self.db.log_decision("signal_considered", {
