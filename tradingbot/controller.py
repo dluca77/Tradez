@@ -58,6 +58,7 @@ class AutonomousTradingController:
             pre_minutes=cfg.get("news", "pre_event_blackout_minutes", default=30),
             post_minutes=cfg.get("news", "post_event_blackout_minutes", default=15),
             extreme_minutes=cfg.get("news", "high_impact_blackout_minutes", default=60),
+            events_file=cfg.get("news", "events_file", default=None),
         )
 
         self.state = SessionState(

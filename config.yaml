@@ -60,6 +60,11 @@ news:
   pre_event_blackout_minutes: 30
   post_event_blackout_minutes: 15
   high_impact_blackout_minutes: 60
+  # Optional: path to a JSON file a separate news-monitoring agent keeps
+  # updated (see news_events.example.json). Hot-reloaded on every check —
+  # no bot restart needed when the file changes. Leave unset to rely only
+  # on load_events() (e.g. a manually populated calendar).
+  events_file: data/news_events.json
 
 sessions:
   prefer: ["london", "london_ny_overlap", "ny_open"]

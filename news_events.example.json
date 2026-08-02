@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Fed rate decision",
+    "time": "2026-08-05T18:00:00",
+    "impact": "extreme",
+    "currencies": ["USD"],
+    "note": "FOMC statement + press conference; historically high volatility on XAUUSD/NAS100/SPX500"
+  },
+  {
+    "name": "US Non-Farm Payrolls",
+    "time": "2026-08-07T12:30:00",
+    "impact": "high",
+    "currencies": ["USD"],
+    "note": "Monthly jobs report"
+  }
+]
