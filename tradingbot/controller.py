@@ -62,6 +62,13 @@ class AutonomousTradingController:
             instrument: set(strategies)
             for instrument, strategies in cfg.get("optimization", "instrument_strategies", default={}).items()
         }
+        # Per-instrument strategy PARAMETER overrides (thresholds, ATR
+        # multipliers, etc) — every instrument still runs every eligible
+        # strategy, but each can tune how sensitive it is. Evidence-based,
+        # filled in from backtest results, not guessed.
+        self.instrument_strategy_params: dict[str, dict[str, dict]] = cfg.get(
+            "optimization", "instrument_strategy_params", default={}
+        )
         self.news_filter = NewsFilter(
             pre_minutes=cfg.get("news", "pre_event_blackout_minutes", default=30),
             post_minutes=cfg.get("news", "post_event_blackout_minutes", default=15),
@@ -229,6 +236,7 @@ class AutonomousTradingController:
                 self.cfg.get("scanning", "min_opportunity_score", default=65),
                 self.optimizer.state.min_confidence * 0.8,
             ),
+            instrument_strategy_params=self.instrument_strategy_params,
         )
 
         min_conf = max(

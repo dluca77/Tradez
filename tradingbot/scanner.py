@@ -47,8 +47,10 @@ async def scan_markets(
     news_filter: NewsFilter,
     historical_winrates: dict[str, float] | None = None,
     min_opportunity_score: float = 65.0,
+    instrument_strategy_params: dict[str, dict[str, dict]] | None = None,
 ) -> list[Candidate]:
     historical_winrates = historical_winrates or {}
+    instrument_strategy_params = instrument_strategy_params or {}
     candidates: list[Candidate] = []
     sess_quality, sess_name = session_quality()
 
@@ -81,7 +83,9 @@ async def scan_markets(
         if regime in (MarketRegime.LOW_LIQUIDITY, MarketRegime.UNPREDICTABLE):
             continue
 
-        strategy_signals = generate_signals(df_exec, df_ctx, regime)
+        strategy_signals = generate_signals(
+            df_exec, df_ctx, regime, instrument_strategy_params.get(instrument)
+        )
         if not strategy_signals:
             continue
 

@@ -55,6 +55,7 @@ def run_backtest(
     starting_equity: float = 10_000.0,
     risk_pct: float = 0.0025,
     min_bars: int = 60,
+    strategy_params: dict[str, dict] | None = None,
 ) -> BacktestResult:
     result = BacktestResult()
     equity = starting_equity
@@ -101,7 +102,7 @@ def run_backtest(
         if regime in (MarketRegime.LOW_LIQUIDITY, MarketRegime.UNPREDICTABLE):
             continue
 
-        signals = generate_signals(window_exec, window_ctx, regime)
+        signals = generate_signals(window_exec, window_ctx, regime, strategy_params)
         if not signals:
             continue
 
