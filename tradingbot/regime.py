@@ -65,7 +65,7 @@ REGIME_STRATEGY_MAP = {
     MarketRegime.WEAK_TREND: ["pullback", "momentum_scalping"],
     MarketRegime.SIDEWAYS: ["mean_reversion", "support_resistance", "vwap_reversion"],
     MarketRegime.CONSOLIDATION: ["mean_reversion", "support_resistance"],
-    MarketRegime.BREAKOUT: ["breakout", "breakout_retest", "volatility_breakout"],
+    MarketRegime.BREAKOUT: ["breakout", "breakout_retest", "volatility_breakout", "opening_range_fvg"],
     MarketRegime.HIGH_VOLATILITY: ["volatility_breakout"],
     MarketRegime.LOW_VOLATILITY: ["mean_reversion"],
     MarketRegime.LOW_LIQUIDITY: [],

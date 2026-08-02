@@ -217,6 +217,68 @@ def session_breakout(df: pd.DataFrame, ctx: pd.DataFrame) -> Optional[StrategyRe
     return None
 
 
+@register(StrategyName.OPENING_RANGE_FVG.value)
+def opening_range_fvg(df: pd.DataFrame, ctx: pd.DataFrame) -> Optional[StrategyResult]:
+    """Opening-range breakout with a Fair Value Gap retest entry (an SMC/ICT
+    concept: a 3-candle imbalance where candle 1 and candle 3 don't overlap).
+    Range = the first M5 candle of the NY session (13:30 UTC). Requires a
+    breakout beyond that range followed by a same-direction FVG to retest
+    into, rather than chasing the breakout candle itself."""
+    if "time" not in df.columns or len(df) < 10:
+        return None
+
+    times = df["time"]
+    last_time = times.iloc[-1]
+    open_mask = (
+        (times.dt.date == last_time.date())
+        & (times.dt.hour == 13)
+        & (times.dt.minute == 30)
+    )
+    if not open_mask.any():
+        return None
+    open_idx = times[open_mask].index[0]
+    range_bar = df.loc[open_idx]
+    range_high, range_low = range_bar["high"], range_bar["low"]
+
+    after = df.loc[open_idx + 1:]
+    if len(after) < 3:
+        return None
+
+    atr_v = atr(df, 14).iloc[-1]
+    entry = df["close"].iloc[-1]
+
+    def find_fvg(direction: str) -> tuple[float, float] | None:
+        idxs = list(after.index)
+        for j in range(2, len(idxs)):
+            c1, c3 = after.loc[idxs[j - 2]], after.loc[idxs[j]]
+            if direction == "bull" and c1["high"] < c3["low"]:
+                return (c1["high"], c3["low"])
+            if direction == "bear" and c1["low"] > c3["high"]:
+                return (c3["high"], c1["low"])
+        return None
+
+    broke_up = after["high"].max() > range_high
+    broke_down = after["low"].min() < range_low
+
+    if broke_up and not broke_down:
+        fvg = find_fvg("bull")
+        if fvg and fvg[0] <= entry <= fvg[1]:
+            stop = range_low - 0.2 * atr_v
+            return StrategyResult(
+                Direction.LONG, entry, stop, _rr_targets(entry, stop, Direction.LONG), atr_v, 0.65,
+                ["Opening range breakout up", "Retest into bullish FVG"],
+            )
+    if broke_down and not broke_up:
+        fvg = find_fvg("bear")
+        if fvg and fvg[0] <= entry <= fvg[1]:
+            stop = range_high + 0.2 * atr_v
+            return StrategyResult(
+                Direction.SHORT, entry, stop, _rr_targets(entry, stop, Direction.SHORT), atr_v, 0.65,
+                ["Opening range breakdown", "Retest into bearish FVG"],
+            )
+    return None
+
+
 @register(StrategyName.VOLATILITY_BREAKOUT.value)
 def volatility_breakout(df: pd.DataFrame, ctx: pd.DataFrame) -> Optional[StrategyResult]:
     close = df["close"]

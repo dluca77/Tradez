@@ -44,6 +44,7 @@ class StrategyName(str, Enum):
     VWAP_REVERSION = "vwap_reversion"
     SESSION_BREAKOUT = "session_breakout"
     VOLATILITY_BREAKOUT = "volatility_breakout"
+    OPENING_RANGE_FVG = "opening_range_fvg"
 
 
 @dataclass
