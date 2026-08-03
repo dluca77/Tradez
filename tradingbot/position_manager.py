@@ -57,8 +57,15 @@ class PositionManagementEngine:
             else current_price >= pos.stop_loss
         )
         if stop_hit:
-            await self.broker.close_position(pos.id, fraction=1.0)
-            actions.append(ManagementAction("exit_stop_loss", f"stop-loss hit at {current_price:.5f}"))
+            # The caller only records a trade as closed (and notifies the
+            # user) when an "exit" action comes back - if the broker itself
+            # rejected the close, the position is still really open and
+            # reporting it as closed would silently stop managing a real,
+            # still-at-risk position while telling the user it's flat.
+            if await self.broker.close_position(pos.id, fraction=1.0):
+                actions.append(ManagementAction("exit_stop_loss", f"stop-loss hit at {current_price:.5f}"))
+            else:
+                log.error("position.close_failed", position_id=pos.id, reason="stop_loss")
             return actions
 
         if pos.take_profit_levels:
@@ -68,8 +75,10 @@ class PositionManagementEngine:
                 else current_price <= final_tp
             )
             if tp_hit:
-                await self.broker.close_position(pos.id, fraction=1.0)
-                actions.append(ManagementAction("exit_take_profit", f"take-profit hit at {current_price:.5f}"))
+                if await self.broker.close_position(pos.id, fraction=1.0):
+                    actions.append(ManagementAction("exit_take_profit", f"take-profit hit at {current_price:.5f}"))
+                else:
+                    log.error("position.close_failed", position_id=pos.id, reason="take_profit")
                 return actions
 
         r = _r_multiple(pos, current_price)
@@ -92,16 +101,20 @@ class PositionManagementEngine:
         # leg's price move was ever counted.
         if r >= 1.5 and pos.quantity > pos.initial_quantity * 0.55:
             close_qty = pos.quantity * (0.3 / (pos.quantity / pos.initial_quantity))
-            await self.broker.close_position(pos.id, fraction=0.3 / (pos.quantity / pos.initial_quantity))
-            pos.realized_pnl += (current_price - pos.entry_price) * direction_mult * close_qty
-            pos.quantity *= 0.7
-            actions.append(ManagementAction("partial_close", f"closed 30% at {r:.2f}R"))
+            if await self.broker.close_position(pos.id, fraction=0.3 / (pos.quantity / pos.initial_quantity)):
+                pos.realized_pnl += (current_price - pos.entry_price) * direction_mult * close_qty
+                pos.quantity *= 0.7
+                actions.append(ManagementAction("partial_close", f"closed 30% at {r:.2f}R"))
+            else:
+                log.error("position.close_failed", position_id=pos.id, reason="partial_1.5R")
         elif r >= 2.0 and pos.quantity > pos.initial_quantity * 0.25:
             close_qty = pos.quantity * (0.3 / (pos.quantity / pos.initial_quantity))
-            await self.broker.close_position(pos.id, fraction=0.3 / (pos.quantity / pos.initial_quantity))
-            pos.realized_pnl += (current_price - pos.entry_price) * direction_mult * close_qty
-            pos.quantity *= 0.7
-            actions.append(ManagementAction("partial_close", f"closed additional 30% at {r:.2f}R"))
+            if await self.broker.close_position(pos.id, fraction=0.3 / (pos.quantity / pos.initial_quantity)):
+                pos.realized_pnl += (current_price - pos.entry_price) * direction_mult * close_qty
+                pos.quantity *= 0.7
+                actions.append(ManagementAction("partial_close", f"closed additional 30% at {r:.2f}R"))
+            else:
+                log.error("position.close_failed", position_id=pos.id, reason="partial_2.0R")
 
         # 3) ATR trailing stop once in profit beyond 1R
         if r >= 1.0:
@@ -116,13 +129,17 @@ class PositionManagementEngine:
 
         # 4) Signal invalidated -> exit
         if not signal_still_valid:
-            await self.broker.close_position(pos.id, fraction=1.0)
-            actions.append(ManagementAction("exit_invalidated", "original signal no longer valid"))
+            if await self.broker.close_position(pos.id, fraction=1.0):
+                actions.append(ManagementAction("exit_invalidated", "original signal no longer valid"))
+            else:
+                log.error("position.close_failed", position_id=pos.id, reason="invalidated")
             return actions
 
         # 5) Time-based exit
         if datetime.utcnow() - pos.opened_at > self.max_hold:
-            await self.broker.close_position(pos.id, fraction=1.0)
+            if not await self.broker.close_position(pos.id, fraction=1.0):
+                log.error("position.close_failed", position_id=pos.id, reason="max_hold")
+                return actions
             actions.append(ManagementAction("exit_time", "max hold time exceeded"))
 
         return actions
