@@ -12,19 +12,21 @@ instruments:
   # (profit factor 0.28-0.79) over 400-1600 trades each — not noise, a
   # proven losing edge with this strategy set. Re-add an instrument here
   # only after a fresh real-data backtest shows it's actually viable.
-  # 2026-08-04: added XPDUSD (palladium, profit factor 1.11, +1871 over 1109
-  # trades) and XPTUSD (platinum, profit factor 0.95 overall but its
-  # trend_following alone is +1077.77 at 58% win rate) from a fresh
-  # run_backtest_check.py pass across every instrument this MT5 account can
-  # actually trade (confirmed via symbol_info trade_mode). USOIL and BTCUSD
-  # also backtested but aren't real CFDs on this account (only leveraged
-  # equity ETFs) - not addable regardless of backtest result.
+  # 2026-08-04: NAS100 and SPX500 removed (not a strategy exclusion - an
+  # instrument-level restriction, same as the FX pairs above). Confirmed via
+  # symbol_info().trade_mode that this specific MetaQuotes-Demo account has
+  # the entire "Indexes" group disabled - every order gets broker-rejected
+  # with retcode 10017 "Trade disabled" regardless of signal quality. Not
+  # fixable from this side; needs a different broker/account with real index
+  # CFD access. XPDUSD (palladium) and XPTUSD (platinum) also removed - both
+  # backtested well on Yahoo futures data (profit factor 1.11 / 0.95) but
+  # this broker's real live spread is 48-72x wider than XAUUSD's on those
+  # two, so the cost-to-profit filter (costs.max_cost_to_expected_profit_ratio)
+  # correctly blocks every signal - confirmed live, not a single trade got
+  # through. Re-add any of these once a broker/account is confirmed to
+  # support them (real trade_mode + real spread, not just a backtest).
   enabled:
     - XAUUSD
-    - NAS100
-    - SPX500
-    - XPDUSD
-    - XPTUSD
   crypto_enabled: false
 
 timeframes:
