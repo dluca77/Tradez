@@ -1,8 +1,8 @@
-mode: paper                      # backtest | paper | live
-live_trading_enabled: false      # must be explicitly flipped after validation
+mode: live                      # backtest | paper | live
+live_trading_enabled: true      # must be explicitly flipped after validation
 
 broker:
-  name: mock                     # mock | mt5 | oanda | ibkr
+  name: mt5                     # mock | mt5 | oanda | ibkr
   account_currency: USD
 
 instruments:
@@ -92,13 +92,32 @@ optimization:
   # Per-instrument strategy PARAMETER overrides — every instrument still
   # runs every eligible strategy, but each can tune how sensitive it is
   # (ADX threshold, RSI levels, ATR multipliers, ...). Evidence-based from
-  # backtest results, not guessed. Example, once confirmed:
-  # instrument_strategy_params:
-  #   XAUUSD:
-  #     trend_following: {adx_threshold: 25, stop_atr_mult: 1.3}
-  #   NAS100:
-  #     breakout: {lookback: 15}
-  instrument_strategy_params: {}
+  # backtest results, not guessed.
+  #
+  # 2026-08-03: live trade history (491 closed mode=live trades since
+  # 2026-07-31) showed trend_following's stop (default stop_atr_mult=1.5)
+  # far too tight for its own EMA-stack/ADX setup — average hold time was
+  # only 1.3-4.3 minutes, i.e. positions were getting stopped out by noise
+  # before any real trend move could play out. Worst on NAS100 (26.7% win
+  # rate, avg -0.73R, 1.3min hold); XAUUSD was closer to breakeven (50% win,
+  # -0.05R) but still very short-lived. Widened stops and raised the ADX bar
+  # so only stronger, more sustained trends qualify (most aggressive on
+  # NAS100, the weakest performer). vwap_reversion showed the same pattern
+  # on XAUUSD (only real-fill data available, n=4, so treated as directional
+  # not conclusive): 25% win rate, avg confidence 77.8 vs trend_following's
+  # 89.6, consistent with dist_atr_mult=1.5 triggering on overextensions too
+  # mild to actually mean-revert. Raised the distance bar and stop room
+  # uniformly (no per-instrument vwap_reversion fill data to differentiate).
+  instrument_strategy_params:
+    XAUUSD:
+      trend_following: {adx_threshold: 24, stop_atr_mult: 1.8}
+      vwap_reversion: {dist_atr_mult: 2.0, stop_atr_mult: 1.3}
+    SPX500:
+      trend_following: {adx_threshold: 25, stop_atr_mult: 1.8}
+      vwap_reversion: {dist_atr_mult: 2.0, stop_atr_mult: 1.3}
+    NAS100:
+      trend_following: {adx_threshold: 28, stop_atr_mult: 2.0}
+      vwap_reversion: {dist_atr_mult: 2.0, stop_atr_mult: 1.3}
 
 database:
   path: data/tradingbot.db
