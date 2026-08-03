@@ -2,6 +2,7 @@
 requiring them to watch the bot."""
 from __future__ import annotations
 
+import httpx
 import structlog
 
 log = structlog.get_logger(__name__)
@@ -17,7 +18,23 @@ class NotificationService:
         if not self.enabled:
             return
         getattr(log, level, log.info)("notification", message=message, channel=self.channel)
-        # channel == "webhook" would POST to self.webhook_url via httpx here.
+
+        if self.channel in ("discord", "slack") and self.webhook_url:
+            self._post_webhook(level, message)
+
+    def _post_webhook(self, level: str, message: str) -> None:
+        prefix = {"error": "\U0001F6A8 ", "warning": "⚠️ ", "info": ""}.get(level, "")
+        text = f"{prefix}{message}"
+        # Discord and Slack incoming webhooks expect different JSON shapes
+        # ({"content": ...} vs {"text": ...}) but both accept a plain POST
+        # with no auth beyond the URL itself, so one code path covers both.
+        payload = {"content": text} if self.channel == "discord" else {"text": text}
+        try:
+            httpx.post(self.webhook_url, json=payload, timeout=5.0)
+        except Exception as exc:  # noqa: BLE001
+            # A failed notification must never take down the trading loop —
+            # log it locally and move on, the trade itself already happened.
+            log.warning("notification.webhook_failed", channel=self.channel, detail=str(exc))
 
     def trade_opened(self, instrument: str, direction: str, confidence: float) -> None:
         self._dispatch("info", f"Opened {direction} {instrument} (confidence {confidence:.0f})")

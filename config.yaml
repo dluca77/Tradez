@@ -113,5 +113,5 @@ dashboard:
 
 notifications:
   enabled: true
-  channel: log   # log | webhook
-  webhook_url: ""
+  channel: log   # log | discord | slack
+  webhook_url: ""   # Discord: Kanaalinstellingen > Integraties > Webhooks. Slack: Incoming Webhooks app.
