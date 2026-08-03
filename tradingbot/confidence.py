@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tradingbot.strategies.base import StrategyResult
-
 
 @dataclass
 class ConfidenceInputs:

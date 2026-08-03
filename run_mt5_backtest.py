@@ -17,12 +17,12 @@ Usage:
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
 from tradingbot.backtest import run_backtest
-from tradingbot.broker.mt5 import MT5_SYMBOL_MAP, _TIMEFRAME_NAMES, _import_mt5
+from tradingbot.broker.mt5 import _TIMEFRAME_NAMES, MT5_SYMBOL_MAP, _import_mt5
 from tradingbot.config import env, load_config
 from tradingbot.data_loader import resample
 
@@ -36,14 +36,14 @@ def fetch_mt5_candles(mt5, symbol: str, timeframe_name: str, lookback_days: int)
     # trade far fewer hours/week than FX, so a fixed bar count would cover
     # very different real time spans per instrument).
     tf_const = getattr(mt5, _TIMEFRAME_NAMES.get(timeframe_name, "TIMEFRAME_M5"))
-    date_to = datetime.now(timezone.utc)
+    date_to = datetime.now(UTC)
     date_from = date_to - timedelta(days=lookback_days)
     rates = mt5.copy_rates_range(symbol, tf_const, date_from, date_to)
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"No data returned for {symbol}: {mt5.last_error()}")
     df = pd.DataFrame(rates)
     return pd.DataFrame({
-        "time": [datetime.fromtimestamp(int(t), tz=timezone.utc) for t in df["time"]],
+        "time": [datetime.fromtimestamp(int(t), tz=UTC) for t in df["time"]],
         "open": df["open"].astype(float),
         "high": df["high"].astype(float),
         "low": df["low"].astype(float),

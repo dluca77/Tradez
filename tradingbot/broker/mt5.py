@@ -17,7 +17,7 @@ be installed on the host; this package attaches to it, it doesn't install it.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
@@ -192,7 +192,7 @@ class MT5Broker(BrokerInterface):
             raise RuntimeError(f"MT5 copy_rates_from_pos({symbol}) failed: {self.mt5.last_error()}")
         return [
             Candle(
-                time=datetime.fromtimestamp(int(r["time"]), tz=timezone.utc),
+                time=datetime.fromtimestamp(int(r["time"]), tz=UTC),
                 open=float(r["open"]), high=float(r["high"]), low=float(r["low"]), close=float(r["close"]),
                 volume=float(r["tick_volume"]),
             )

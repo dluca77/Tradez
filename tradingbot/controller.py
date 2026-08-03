@@ -6,7 +6,6 @@ path against a real broker implementation).
 from __future__ import annotations
 
 import asyncio
-import uuid
 from datetime import datetime, timedelta
 
 import structlog
@@ -14,11 +13,11 @@ import structlog
 from tradingbot.broker.base import BrokerInterface
 from tradingbot.broker.mock import INSTRUMENT_PROFILES
 from tradingbot.config import AppConfig
-from tradingbot.correlation import combined_usd_exposure, correlation_penalty
+from tradingbot.correlation import correlation_penalty
 from tradingbot.costs import estimate_costs
 from tradingbot.database import Database
 from tradingbot.execution import OrderExecutionEngine
-from tradingbot.models import Direction, OrderType
+from tradingbot.models import Direction
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
 from tradingbot.notifications import NotificationService
 from tradingbot.optimization import SelfOptimizationModule
@@ -371,8 +370,9 @@ class AutonomousTradingController:
                 current_price = quote.mid
 
                 candles = await self.broker.get_candles(pos.instrument, "M5", 30)
-                from tradingbot.indicators import atr as atr_fn
                 import pandas as pd
+
+                from tradingbot.indicators import atr as atr_fn
 
                 df = pd.DataFrame({"high": [c.high for c in candles], "low": [c.low for c in candles], "close": [c.close for c in candles]})
                 current_atr = float(atr_fn(df, 14).iloc[-1]) if len(df) >= 14 else abs(pos.entry_price - pos.stop_loss)

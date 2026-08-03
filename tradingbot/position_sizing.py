@@ -5,7 +5,6 @@ from __future__ import annotations
 from tradingbot.broker.mock import INSTRUMENT_PROFILES
 from tradingbot.models import PositionSizeResult
 
-
 MIN_STOP_DISTANCE_PCT = 0.0005  # floor: at least 5 bps of entry price
 
 

@@ -12,8 +12,9 @@ Defaults (used when no override is given) match the original fixed values.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -41,7 +42,7 @@ class StrategyResult:
     reasons: list[str] = field(default_factory=list)
 
 
-StrategyFn = Callable[[pd.DataFrame, pd.DataFrame, Optional[dict]], Optional[StrategyResult]]
+StrategyFn = Callable[[pd.DataFrame, pd.DataFrame, dict | None], StrategyResult | None]
 STRATEGY_REGISTRY: dict[str, StrategyFn] = {}
 
 
@@ -65,7 +66,7 @@ def _rr_targets(entry: float, stop: float, direction: Direction) -> list[float]:
 
 
 @register(StrategyName.TREND_FOLLOWING.value)
-def trend_following(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def trend_following(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     adx_threshold = _p(params, "adx_threshold", 22)
     stop_atr_mult = _p(params, "stop_atr_mult", 1.5)
 
@@ -91,7 +92,7 @@ def trend_following(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = N
 
 
 @register(StrategyName.MOMENTUM_SCALPING.value)
-def momentum_scalping(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def momentum_scalping(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     rsi_up = _p(params, "rsi_up", 55)
     rsi_down = _p(params, "rsi_down", 45)
     stop_atr_mult = _p(params, "stop_atr_mult", 1.0)
@@ -105,15 +106,15 @@ def momentum_scalping(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None =
     entry = close.iloc[-1]
     if momentum_up and macd_line.iloc[-1] > signal_line.iloc[-1]:
         stop = entry - stop_atr_mult * atr_v
-        return StrategyResult(Direction.LONG, entry, stop, _rr_targets(entry, stop, Direction.LONG), atr_v, 0.6, [f"MACD momentum up", f"RSI > {rsi_up}"])
+        return StrategyResult(Direction.LONG, entry, stop, _rr_targets(entry, stop, Direction.LONG), atr_v, 0.6, ["MACD momentum up", f"RSI > {rsi_up}"])
     if momentum_down and macd_line.iloc[-1] < signal_line.iloc[-1]:
         stop = entry + stop_atr_mult * atr_v
-        return StrategyResult(Direction.SHORT, entry, stop, _rr_targets(entry, stop, Direction.SHORT), atr_v, 0.6, [f"MACD momentum down", f"RSI < {rsi_down}"])
+        return StrategyResult(Direction.SHORT, entry, stop, _rr_targets(entry, stop, Direction.SHORT), atr_v, 0.6, ["MACD momentum down", f"RSI < {rsi_down}"])
     return None
 
 
 @register(StrategyName.BREAKOUT.value)
-def breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     lookback = _p(params, "lookback", 20)
     stop_atr_mult = _p(params, "stop_atr_mult", 1.2)
 
@@ -133,7 +134,7 @@ def breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) ->
 
 
 @register(StrategyName.BREAKOUT_RETEST.value)
-def breakout_retest(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def breakout_retest(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     stop_atr_mult = _p(params, "stop_atr_mult", 1.0)
     retest_tolerance = _p(params, "retest_tolerance", 0.001)
 
@@ -156,7 +157,7 @@ def breakout_retest(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = N
 
 
 @register(StrategyName.PULLBACK.value)
-def pullback(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def pullback(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     pullback_atr_mult = _p(params, "pullback_atr_mult", 0.5)
     rsi_low = _p(params, "rsi_low", 40)
     rsi_high = _p(params, "rsi_high", 60)
@@ -180,7 +181,7 @@ def pullback(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) ->
 
 
 @register(StrategyName.MEAN_REVERSION.value)
-def mean_reversion(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def mean_reversion(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     bb_period = _p(params, "bb_period", 20)
     bb_std = _p(params, "bb_std", 2.0)
     rsi_oversold = _p(params, "rsi_oversold", 30)
@@ -204,7 +205,7 @@ def mean_reversion(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = No
 
 
 @register(StrategyName.SUPPORT_RESISTANCE.value)
-def support_resistance(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def support_resistance(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     proximity_atr_mult = _p(params, "proximity_atr_mult", 0.4)
     rsi_low = _p(params, "rsi_low", 45)
     rsi_high = _p(params, "rsi_high", 55)
@@ -225,7 +226,7 @@ def support_resistance(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None 
 
 
 @register(StrategyName.VWAP_REVERSION.value)
-def vwap_reversion(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def vwap_reversion(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     dist_atr_mult = _p(params, "dist_atr_mult", 1.5)
     stop_atr_mult = _p(params, "stop_atr_mult", 1.0)
 
@@ -244,7 +245,7 @@ def vwap_reversion(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = No
 
 
 @register(StrategyName.SESSION_BREAKOUT.value)
-def session_breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def session_breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     vol_mult = _p(params, "vol_mult", 1.2)
     stop_atr_mult = _p(params, "stop_atr_mult", 1.2)
 
@@ -265,7 +266,7 @@ def session_breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = 
 
 
 @register(StrategyName.OPENING_RANGE_FVG.value)
-def opening_range_fvg(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def opening_range_fvg(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     """Opening-range breakout with a Fair Value Gap retest entry (an SMC/ICT
     concept: a 3-candle imbalance where candle 1 and candle 3 don't overlap).
     Range = the first M5 candle of the session open (13:30 UTC / NY open by
@@ -332,7 +333,7 @@ def opening_range_fvg(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None =
 
 
 @register(StrategyName.VOLATILITY_BREAKOUT.value)
-def volatility_breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> Optional[StrategyResult]:
+def volatility_breakout(df: pd.DataFrame, ctx: pd.DataFrame, params: dict | None = None) -> StrategyResult | None:
     expansion_mult = _p(params, "expansion_mult", 1.3)
     squeeze_mult = _p(params, "squeeze_mult", 0.8)
     stop_atr_mult = _p(params, "stop_atr_mult", 1.3)

@@ -5,7 +5,7 @@ Run alongside the controller in the same process (see run_paper.py).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
@@ -503,7 +503,7 @@ def _fmt_dt(value: str | None) -> str:
     if not value:
         return "-"
     try:
-        dt = datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(value).replace(tzinfo=UTC)
         return dt.astimezone(_LOCAL_TZ).strftime("%d-%m %H:%M")
     except ValueError:
         return value

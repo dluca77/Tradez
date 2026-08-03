@@ -75,7 +75,7 @@ class AppConfig:
 
 def load_config(path: str | Path | None = None) -> AppConfig:
     path = Path(path) if path else ROOT_DIR / "config.yaml"
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     return AppConfig(raw=raw)
 

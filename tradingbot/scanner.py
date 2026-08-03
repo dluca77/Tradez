@@ -13,7 +13,7 @@ from tradingbot.broker.base import BrokerInterface
 from tradingbot.broker.mock import INSTRUMENT_PROFILES
 from tradingbot.confidence import ConfidenceInputs, compute_confidence
 from tradingbot.costs import cost_to_profit_ratio, estimate_costs
-from tradingbot.models import Direction, MarketRegime, Signal, StrategyName
+from tradingbot.models import Direction, MarketRegime, Signal
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
 from tradingbot.position_sizing import MIN_STOP_DISTANCE_PCT
 from tradingbot.regime import detect_regime

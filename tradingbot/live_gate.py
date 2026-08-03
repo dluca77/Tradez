@@ -66,7 +66,7 @@ class LiveTradingGate:
         risk = self.cfg.risk
         checks["risk_limits_configured"] = (
             0 < risk.default_risk_pct <= risk.max_risk_pct <= risk.absolute_max_risk_pct <= 0.01
-            and not (risk.martingale_forbidden is False)
+            and risk.martingale_forbidden is not False
         )
         if not checks["risk_limits_configured"]:
             reasons.append("risk limits in config.yaml are missing, inverted, or exceed the safety ceiling")

@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class Direction(str, Enum):
@@ -86,7 +85,7 @@ class RiskDecision:
     risk_pct: float
     reasons: list[str] = field(default_factory=list)
     blocked: bool = False
-    block_reason: Optional[str] = None
+    block_reason: str | None = None
 
 
 @dataclass
@@ -103,11 +102,11 @@ class Order:
     direction: Direction
     order_type: OrderType
     quantity: float
-    price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    take_profit: Optional[float] = None
+    price: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
     status: str = "pending"
-    filled_price: Optional[float] = None
+    filled_price: float | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -131,8 +130,8 @@ class Position:
     take_profit_levels: list[TakeProfitLevel]
     # Unknown for positions reconciled from the broker rather than opened by
     # our own signal engine (e.g. on startup recovery) — hence the defaults.
-    strategy: Optional[StrategyName] = None
-    regime_at_entry: Optional[MarketRegime] = None
+    strategy: StrategyName | None = None
+    regime_at_entry: MarketRegime | None = None
     confidence: float = 0.0
     risk_amount: float = 0.0
     opened_at: datetime = field(default_factory=datetime.utcnow)
@@ -145,4 +144,4 @@ class Position:
     # (e.g. MT5's own `profit` field, which correctly accounts for
     # contract size, swap, etc). None for brokers/positions where this
     # isn't available — callers must fall back to a manual estimate.
-    broker_unrealized_pnl: Optional[float] = None
+    broker_unrealized_pnl: float | None = None

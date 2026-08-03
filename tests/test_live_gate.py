@@ -4,7 +4,7 @@ import pytest
 
 from tradingbot.config import load_config
 from tradingbot.database import Database
-from tradingbot.live_gate import LiveTradingGate, MIN_PAPER_TRADES
+from tradingbot.live_gate import MIN_PAPER_TRADES, LiveTradingGate
 
 
 class _FakeAccount:

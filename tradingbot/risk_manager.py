@@ -8,7 +8,7 @@ may tighten them further but must never loosen them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from tradingbot.config import RiskConfig
 from tradingbot.models import RiskDecision
