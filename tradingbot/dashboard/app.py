@@ -452,7 +452,7 @@ SIGNALS_TEMPLATE = """<!doctype html>
   th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid #232a38; position: sticky; top: 0; background: #0b0e14; }}
   td {{ padding: 8px 10px; border-bottom: 1px solid #1c2330; white-space: normal; word-break: break-word; }}
   .empty {{ color: #5a6472; font-size: .85rem; padding: 10px 4px; }}
-  .tag {{ display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 600; }}
+  .tag {{ display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 600; white-space: nowrap; word-break: keep-all; }}
   .tag-considered {{ background: #1e2a3a; color: #6fb3ff; }}
   .tag-blocked {{ background: #2a2020; color: #ff6b6b; }}
   .tag-risk {{ background: #1d3a2a; color: #3ddc84; }}
@@ -672,9 +672,20 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
         tag_map = {
             "signal_considered": ("tag-considered", "Overwogen"),
             "signal_filtered": ("tag-blocked", "Uitgefilterd"),
+            "scan_skipped": ("tag-other", "Overgeslagen"),
             "trade_blocked": ("tag-blocked", "Geblokkeerd"),
             "risk_decision": ("tag-risk", "Risk-check"),
             "position_management": ("tag-mgmt", "Beheer"),
+        }
+
+        skip_reason_labels = {
+            "news_blackout": "nieuws-blackout",
+            "broker_data_error": "broker gaf geen data",
+            "insufficient_bars": "te weinig candles",
+            "regime_not_tradeable": "regime niet geschikt om te traden",
+            "no_strategy_signal": "geen enkele strategie gaf een signaal",
+            "cost_too_high": "kosten te hoog t.o.v. verwachte winst",
+            "opportunity_score_too_low": "opportunity-score te laag",
         }
 
         filter_reason_labels = {
@@ -709,6 +720,18 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
                     detail += f" ({payload.get('confidence', '?')} &lt; {payload.get('min_confidence_required', '?')})"
                 if reason == "strategy_not_allowed_for_instrument":
                     detail += f" &mdash; toegestaan: {', '.join(payload.get('allowed', []))}"
+            elif dtype == "scan_skipped":
+                reason = payload.get("reason", "?")
+                label = skip_reason_labels.get(reason, reason)
+                detail = label
+                if reason == "regime_not_tradeable":
+                    detail += f" ({payload.get('regime', '?')})"
+                if reason == "no_strategy_signal":
+                    detail += f" (regime: {payload.get('regime', '?')})"
+                if reason == "opportunity_score_too_low":
+                    detail += f" &mdash; {payload.get('strategy', '?')}: {payload.get('score', '?')} &lt; {payload.get('min_required', '?')}"
+                if reason == "cost_too_high":
+                    detail += f" &mdash; {payload.get('strategy', '?')}: {payload.get('cost_ratio', 0)*100:.0f}%"
             elif dtype == "trade_blocked":
                 detail = f"reden: {payload.get('reason', '?')}"
             elif dtype == "risk_decision":

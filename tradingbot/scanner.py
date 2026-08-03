@@ -41,6 +41,17 @@ class Candidate:
     reasons: list[str]
 
 
+def _log_skip(db, instrument: str, reason: str, **extra) -> None:
+    # Every scan-cycle skip below used to be a bare `continue` — an
+    # instrument stuck in an untradeable regime, or one that never
+    # produces a strategy signal, left zero trace anywhere, so it looked
+    # indistinguishable from "the scanner isn't checking this instrument
+    # at all" (observed: only one of three configured instruments ever
+    # showed up in the decision log/dashboard, with no visible reason).
+    if db is not None:
+        db.log_decision("scan_skipped", {"reason": reason, **extra}, instrument=instrument)
+
+
 async def scan_markets(
     broker: BrokerInterface,
     instruments: list[str],
@@ -48,6 +59,7 @@ async def scan_markets(
     historical_winrates: dict[str, float] | None = None,
     min_opportunity_score: float = 65.0,
     instrument_strategy_params: dict[str, dict[str, dict]] | None = None,
+    db=None,
 ) -> list[Candidate]:
     historical_winrates = historical_winrates or {}
     instrument_strategy_params = instrument_strategy_params or {}
@@ -58,19 +70,22 @@ async def scan_markets(
         currencies = INSTRUMENT_CURRENCIES.get(instrument, [])
         blackout, reason = news_filter.is_blackout(currencies)
         if blackout:
+            _log_skip(db, instrument, "news_blackout", detail=reason)
             continue
 
         try:
             candles_exec = await broker.get_candles(instrument, "M5", 150)
             candles_ctx = await broker.get_candles(instrument, "H1", 150)
-        except RuntimeError:
+        except RuntimeError as exc:
             # One broken/unavailable instrument (e.g. a symbol the real
             # broker doesn't offer under this name) must not take down the
             # whole scan cycle — skip it and keep scanning the rest.
+            _log_skip(db, instrument, "broker_data_error", detail=str(exc))
             continue
         df_exec = _candles_to_df(candles_exec)
         df_ctx = _candles_to_df(candles_ctx)
         if len(df_exec) < 30:
+            _log_skip(db, instrument, "insufficient_bars", bars=len(df_exec))
             continue
 
         quote = await broker.get_quote(instrument)
@@ -81,12 +96,14 @@ async def scan_markets(
 
         regime = detect_regime(df_exec, spread_pips, avg_spread_pips)
         if regime in (MarketRegime.LOW_LIQUIDITY, MarketRegime.UNPREDICTABLE):
+            _log_skip(db, instrument, "regime_not_tradeable", regime=regime.value)
             continue
 
         strategy_signals = generate_signals(
             df_exec, df_ctx, regime, instrument_strategy_params.get(instrument)
         )
         if not strategy_signals:
+            _log_skip(db, instrument, "no_strategy_signal", regime=regime.value)
             continue
 
         for strategy_name, result in strategy_signals:
@@ -136,6 +153,7 @@ async def scan_markets(
             )
 
             if cost_ratio > 0.35:
+                _log_skip(db, instrument, "cost_too_high", strategy=strategy_name.value, cost_ratio=cost_ratio)
                 continue
 
             signal = Signal(
@@ -154,6 +172,11 @@ async def scan_markets(
 
             opportunity_score = confidence * 0.7 + min(expected_rr, 3.0) / 3.0 * 20 + sess_quality * 10
             if opportunity_score < min_opportunity_score:
+                _log_skip(
+                    db, instrument, "opportunity_score_too_low",
+                    strategy=strategy_name.value, score=round(opportunity_score, 1),
+                    min_required=round(min_opportunity_score, 1),
+                )
                 continue
 
             candidates.append(

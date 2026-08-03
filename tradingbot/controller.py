@@ -237,6 +237,7 @@ class AutonomousTradingController:
                 self.optimizer.state.min_confidence * 0.8,
             ),
             instrument_strategy_params=self.instrument_strategy_params,
+            db=self.db,
         )
 
         min_conf = max(
