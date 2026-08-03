@@ -6,6 +6,7 @@ path against a real broker implementation).
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 
 import structlog
@@ -48,7 +49,9 @@ class AutonomousTradingController:
         self.notifications = NotificationService(
             enabled=cfg.get("notifications", "enabled", default=True),
             channel=cfg.get("notifications", "channel", default="log"),
-            webhook_url=cfg.get("notifications", "webhook_url", default=""),
+            # Webhook URLs are live credentials - sourced from the env var,
+            # never from config.yaml (which is committed to the repo).
+            webhook_url=os.environ.get("NOTIFY_WEBHOOK_URL", ""),
         )
         self.optimizer = SelfOptimizationModule(self.db, cfg.get("optimization", "min_sample_size", default=30))
         self.permanently_disabled_strategies = set(
