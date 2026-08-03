@@ -75,15 +75,13 @@ optimization:
   min_sample_size: 30
   max_confidence_increase_per_cycle: 5
   max_risk_decrease_per_cycle: 0.05
-  # Proven net-negative in the same real-data backtest, across every
-  # instrument tested (not just the ones we dropped above) — momentum_scalping
-  # lost money on all 11 instruments, vwap_reversion had a ~10% win rate on
-  # metals. Disabled unconditionally, independent of the adaptive
-  # self-optimization state (which only disables on live paper-trading
-  # stats and could otherwise silently re-enable these).
-  permanently_disabled_strategies:
-    - momentum_scalping
-    - vwap_reversion
+  # DELIBERATELY kept empty — no strategy is ever hard-excluded, including
+  # momentum_scalping and vwap_reversion despite their poor backtest numbers.
+  # A strategy must always be free to look at live candles and produce its
+  # own signal; the live confidence/risk-reward weighing in controller.py
+  # is what decides per-signal whether it's worth taking, not a pre-set
+  # exclusion list decided ahead of time.
+  permanently_disabled_strategies: []
   # Per-instrument strategy allowlist. DELIBERATELY kept empty — every
   # instrument must stay able to use every strategy. Backtest evidence that
   # a strategy behaves badly on a given instrument (e.g. pullback was
