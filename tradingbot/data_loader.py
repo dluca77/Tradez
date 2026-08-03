@@ -25,6 +25,7 @@ YAHOO_TICKERS = {
     "SPX500": "^GSPC",
     "GER40": "^GDAXI",
     "USOIL": "CL=F",
+    "BTCUSD": "BTC-USD",
 }
 
 
