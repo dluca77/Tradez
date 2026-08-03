@@ -258,14 +258,34 @@ class AutonomousTradingController:
 
         for candidate in candidates:
             signal = candidate.signal
+            # Every one of these filters used to `continue` silently before
+            # anything was logged — a candidate blocked here (e.g. by the
+            # per-instrument strategy allowlist) never showed up anywhere,
+            # not even in the /signalen decision log, making it look like
+            # the bot had gone quiet when it was actually filtering signals
+            # out every cycle.
             if signal.confidence < min_conf:
+                self.db.log_decision("signal_filtered", {
+                    "reason": "confidence_below_threshold", "confidence": signal.confidence,
+                    "min_confidence_required": min_conf, "strategy": signal.strategy.value,
+                }, instrument=signal.instrument)
                 continue
             if signal.strategy.value in self.optimizer.state.disabled_strategies:
+                self.db.log_decision("signal_filtered", {
+                    "reason": "strategy_disabled_by_optimizer", "strategy": signal.strategy.value,
+                }, instrument=signal.instrument)
                 continue
             if signal.strategy.value in self.permanently_disabled_strategies:
+                self.db.log_decision("signal_filtered", {
+                    "reason": "strategy_permanently_disabled", "strategy": signal.strategy.value,
+                }, instrument=signal.instrument)
                 continue
             allowed_for_instrument = self.instrument_allowed_strategies.get(signal.instrument)
             if allowed_for_instrument and signal.strategy.value not in allowed_for_instrument:
+                self.db.log_decision("signal_filtered", {
+                    "reason": "strategy_not_allowed_for_instrument", "strategy": signal.strategy.value,
+                    "allowed": sorted(allowed_for_instrument),
+                }, instrument=signal.instrument)
                 continue
 
             self.db.log_decision("signal_considered", {

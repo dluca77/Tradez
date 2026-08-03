@@ -671,9 +671,17 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
 
         tag_map = {
             "signal_considered": ("tag-considered", "Overwogen"),
+            "signal_filtered": ("tag-blocked", "Uitgefilterd"),
             "trade_blocked": ("tag-blocked", "Geblokkeerd"),
             "risk_decision": ("tag-risk", "Risk-check"),
             "position_management": ("tag-mgmt", "Beheer"),
+        }
+
+        filter_reason_labels = {
+            "confidence_below_threshold": "confidence te laag",
+            "strategy_disabled_by_optimizer": "strategie tijdelijk uitgeschakeld",
+            "strategy_permanently_disabled": "strategie permanent uitgeschakeld",
+            "strategy_not_allowed_for_instrument": "strategie niet toegestaan voor dit instrument",
         }
 
         rows = []
@@ -692,6 +700,15 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
                     f"score {payload.get('opportunity_score', '?'):.1f}" if isinstance(payload.get("opportunity_score"), (int, float))
                     else f"confidence {payload.get('confidence', '?')}"
                 )
+            elif dtype == "signal_filtered":
+                reason = payload.get("reason", "?")
+                label = filter_reason_labels.get(reason, reason)
+                strat = payload.get("strategy", "?")
+                detail = f"{strat}: {label}"
+                if reason == "confidence_below_threshold":
+                    detail += f" ({payload.get('confidence', '?')} &lt; {payload.get('min_confidence_required', '?')})"
+                if reason == "strategy_not_allowed_for_instrument":
+                    detail += f" &mdash; toegestaan: {', '.join(payload.get('allowed', []))}"
             elif dtype == "trade_blocked":
                 detail = f"reden: {payload.get('reason', '?')}"
             elif dtype == "risk_decision":
