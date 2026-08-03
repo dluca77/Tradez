@@ -210,6 +210,22 @@ class AutonomousTradingController:
 
         open_positions = await self.broker.get_open_positions()
 
+        # Broker adapters (e.g. MT5Broker.get_open_positions) build a fresh
+        # Position on every poll and have no way to know when it was really
+        # opened, so Position.opened_at defaults to "now" every single call.
+        # That silently disables the max-hold time-based exit below (it
+        # never sees more than a few seconds of elapsed time) for any
+        # position recovered from the broker rather than opened by us this
+        # process lifetime - restore the real value from our own trade log,
+        # which is written with datetime.utcnow() at the moment we placed it.
+        true_opened_at = {
+            row["id"]: datetime.fromisoformat(row["opened_at"])
+            for row in self.db.fetch_open_trades()
+        }
+        for pos in open_positions:
+            if pos.id in true_opened_at:
+                pos.opened_at = true_opened_at[pos.id]
+
         # A position can disappear from the broker between polls without
         # this bot ever calling close_position() itself — MT5 executes
         # stop-loss/take-profit natively at the server. Without this check,
