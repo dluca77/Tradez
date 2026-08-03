@@ -538,7 +538,14 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             except Exception:
                 current_price = pos.entry_price
             direction_mult = 1 if pos.direction == Direction.LONG else -1
-            pnl = (current_price - pos.entry_price) * direction_mult * pos.quantity
+            # Prefer the broker's own authoritative P&L (accounts for
+            # contract size, e.g. 100 oz/lot on XAUUSD) over our manual
+            # estimate, which understated it by that same factor since
+            # `quantity` here is the broker's lot size, not underlying units.
+            if pos.broker_unrealized_pnl is not None:
+                pnl = pos.broker_unrealized_pnl
+            else:
+                pnl = (current_price - pos.entry_price) * direction_mult * pos.quantity
             dclass, dlabel = _direction_label(pos.direction.value)
             rows.append(POSITION_ROW.format(
                 instrument=pos.instrument, direction_class=dclass, direction_label=dlabel,

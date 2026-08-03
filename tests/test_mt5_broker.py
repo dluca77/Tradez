@@ -30,6 +30,7 @@ class _FakePosition:
     volume = 0.5
     sl = 1.0950
     tp = 1.1100
+    profit = 42.50
 
 
 def _make_fake_mt5():
@@ -131,6 +132,10 @@ async def test_mt5_broker_open_positions_maps_direction(fake_mt5_module):
     assert len(positions) == 1
     assert positions[0].direction == Direction.LONG
     assert positions[0].instrument == "EURUSD"
+    # MT5's own live P&L must be surfaced, not recomputed manually — a
+    # manual (price_diff * volume) estimate ignores contract size and
+    # understates real profit/loss for instruments like XAUUSD.
+    assert positions[0].broker_unrealized_pnl == 42.50
 
 
 @pytest.mark.asyncio

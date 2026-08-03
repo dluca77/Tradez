@@ -370,14 +370,31 @@ class AutonomousTradingController:
                 if action.action.startswith("exit"):
                     entry = pos.entry_price
                     direction_mult = 1 if pos.direction == Direction.LONG else -1
-                    # Use the REMAINING quantity for this final leg, plus
-                    # whatever was already realized by earlier partial
-                    # closes — using initial_quantity here would apply the
-                    # final price to the whole original size, silently
-                    # discarding profit already locked in at 1.5R/2R.
-                    pnl = pos.realized_pnl + (current_price - entry) * direction_mult * pos.quantity
                     r_mult = (current_price - entry) * direction_mult / abs(entry - pos.initial_stop_loss) if pos.initial_stop_loss != entry else 0.0
-                    self.db.record_trade_close(pos.id, current_price, pnl, r_mult, action.action)
+
+                    # Prefer the broker's own authoritative realized P&L
+                    # (e.g. MT5's history_deals_get, which sums every exit
+                    # deal for this position ticket including earlier
+                    # partial closes, and correctly accounts for contract
+                    # size). Our manual estimate below uses `quantity`,
+                    # which for a real MT5 position is the broker's LOT
+                    # size, not the underlying-unit quantity our own sizing
+                    # computed — multiplying price-diff by lots directly
+                    # understated pnl by the contract-size factor (e.g.
+                    # ~100x on XAUUSD, where 1 lot = 100 oz).
+                    broker_result = await self.broker.get_closed_position_result(pos.id)
+                    if broker_result is not None:
+                        exit_price, pnl = broker_result
+                    else:
+                        exit_price = current_price
+                        # Use the REMAINING quantity for this final leg, plus
+                        # whatever was already realized by earlier partial
+                        # closes — using initial_quantity here would apply the
+                        # final price to the whole original size, silently
+                        # discarding profit already locked in at 1.5R/2R.
+                        pnl = pos.realized_pnl + (current_price - entry) * direction_mult * pos.quantity
+
+                    self.db.record_trade_close(pos.id, exit_price, pnl, r_mult, action.action)
                     self.notifications.trade_closed(pos.instrument, pnl, r_mult)
                     self._register_trade_result(pnl)
 

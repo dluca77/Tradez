@@ -141,3 +141,8 @@ class Position:
     r_multiple_realized: float = 0.0
     reason: str = ""
     realized_pnl: float = 0.0  # pnl already banked from partial closes, before the final exit
+    # Authoritative live floating P&L as reported by the broker itself
+    # (e.g. MT5's own `profit` field, which correctly accounts for
+    # contract size, swap, etc). None for brokers/positions where this
+    # isn't available — callers must fall back to a manual estimate.
+    broker_unrealized_pnl: Optional[float] = None

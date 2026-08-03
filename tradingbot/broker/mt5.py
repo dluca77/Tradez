@@ -150,7 +150,11 @@ class MT5Broker(BrokerInterface):
         result: list[Position] = []
         if not positions:
             return result
+        # Overrides (e.g. NAS100 -> USTEC) must reverse-map too, or a
+        # position opened under an overridden name comes back with its raw
+        # broker symbol as the "instrument" instead of our internal name.
         reverse_map = {v: k for k, v in MT5_SYMBOL_MAP.items()}
+        reverse_map.update({v: k for k, v in self.symbol_overrides.items()})
         for p in positions:
             base_symbol = p.symbol[: len(p.symbol) - len(self.suffix)] if self.suffix and p.symbol.endswith(self.suffix) else p.symbol
             instrument = reverse_map.get(base_symbol, base_symbol)
@@ -162,6 +166,12 @@ class MT5Broker(BrokerInterface):
                 stop_loss=float(p.sl), initial_stop_loss=float(p.sl),
                 take_profit_levels=[TakeProfitLevel(price=take_profit, close_fraction=1.0)] if take_profit else [],
                 risk_amount=0.0,
+                # MT5's own live floating P&L — correctly accounts for
+                # contract size (e.g. 100 oz/lot on XAUUSD), which our own
+                # (price_diff * quantity) formula does not, since `quantity`
+                # here is MT5's lot size, not the underlying-unit quantity
+                # our position sizing originally computed.
+                broker_unrealized_pnl=float(p.profit),
             ))
         return result
 
