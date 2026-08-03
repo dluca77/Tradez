@@ -211,6 +211,11 @@ TEMPLATE = """<!doctype html>
 </section>
 
 <section>
+  <div class="section-title">Signalen &amp; beslissingen</div>
+  <a class="view-all" href="/signalen">Bekijk welke signalen recent overwogen/geblokkeerd zijn &rarr;</a>
+</section>
+
+<section>
   <div class="section-title">Bediening</div>
   <div class="btn-row">
     <button class="btn-pause" onclick="callControl('/control/pause')">&#9208; Pauzeer</button>
@@ -401,6 +406,66 @@ HISTORY_TEMPLATE = """<!doctype html>
   <th>Geopend</th><th>Gesloten</th><th>Instrument</th><th>Richting</th><th>Strategie</th>
   <th>Instap</th><th>Uitstap</th><th>Resultaat</th><th>R</th><th>Reden</th>
 </tr>
+{rows}
+</table>
+</div>
+</body></html>"""
+
+SIGNALS_TEMPLATE = """<!doctype html>
+<html><head><title>Signalen &amp; beslissingen</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="15">
+<style>
+  * {{ box-sizing: border-box; }}
+  html, body {{ overflow-x: hidden; width: 100%; }}
+  body {{
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #0b0e14; color: #e8ebf0; margin: 0;
+    padding: 16px 16px 48px; max-width: 1000px; margin-inline: auto;
+  }}
+  h1 {{ font-size: 1.15rem; font-weight: 600; margin: 4px 0 2px; }}
+  .subtitle {{ color: #7d8896; font-size: .85rem; margin-bottom: 18px; }}
+  a {{ color: #6fb3ff; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .back {{ display: inline-block; margin-bottom: 14px; font-size: .85rem; }}
+  .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; max-width: 100%; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: .82rem; }}
+  @media (max-width: 640px) {{
+    .table-scroll table, .table-scroll thead, .table-scroll tbody,
+    .table-scroll th, .table-scroll td, .table-scroll tr {{ display: block; }}
+    .table-scroll thead {{ display: none; }}
+    .table-scroll tr {{
+      border: 1px solid #232a38; border-radius: 10px; padding: 4px 10px;
+      margin-bottom: 8px; background: #10141c;
+    }}
+    .table-scroll td {{
+      display: flex; justify-content: space-between; align-items: flex-start;
+      white-space: normal; border-bottom: 1px solid #1c2330; padding: 7px 0;
+      text-align: right; gap: 10px;
+    }}
+    .table-scroll td:last-child {{ border-bottom: none; }}
+    .table-scroll td::before {{
+      content: attr(data-label); color: #7d8896; font-weight: 500;
+      text-align: left; padding-right: 10px; flex-shrink: 0;
+    }}
+  }}
+  th {{ text-align: left; color: #7d8896; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid #232a38; position: sticky; top: 0; background: #0b0e14; }}
+  td {{ padding: 8px 10px; border-bottom: 1px solid #1c2330; white-space: normal; word-break: break-word; }}
+  .empty {{ color: #5a6472; font-size: .85rem; padding: 10px 4px; }}
+  .tag {{ display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 600; }}
+  .tag-considered {{ background: #1e2a3a; color: #6fb3ff; }}
+  .tag-blocked {{ background: #2a2020; color: #ff6b6b; }}
+  .tag-risk {{ background: #1d3a2a; color: #3ddc84; }}
+  .tag-mgmt {{ background: #2a2620; color: #e0b84c; }}
+  .tag-other {{ background: #232a38; color: #9aa4b2; }}
+</style></head>
+<body>
+<a class="back" href="/">&larr; Terug naar dashboard</a>
+<h1>Recente signalen &amp; beslissingen</h1>
+<div class="subtitle">Laatste {count} regels &middot; ververst elke 15 sec &middot; laat zien welk signaal overwogen of geblokkeerd werd, en waarom</div>
+<div class="table-scroll">
+<table>
+<tr><th>Tijd</th><th>Instrument</th><th>Type</th><th>Details</th></tr>
 {rows}
 </table>
 </div>
@@ -598,6 +663,57 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             total_pnl_abs=abs(perf.total_pnl),
             win_rate=perf.win_rate * 100,
             profit_factor=perf.profit_factor,
+        )
+
+    @app.get("/signalen", response_class=HTMLResponse)
+    async def signals():
+        decisions = controller.db.fetch_recent_decisions(limit=60)
+
+        tag_map = {
+            "signal_considered": ("tag-considered", "Overwogen"),
+            "trade_blocked": ("tag-blocked", "Geblokkeerd"),
+            "risk_decision": ("tag-risk", "Risk-check"),
+            "position_management": ("tag-mgmt", "Beheer"),
+        }
+
+        rows = []
+        for row in decisions:
+            try:
+                payload = json.loads(row["payload"])
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+
+            dtype = row["decision_type"]
+            tag_class, tag_label = tag_map.get(dtype, ("tag-other", dtype))
+
+            if dtype == "signal_considered":
+                detail = (
+                    f"confidence {payload.get('confidence', '?')}, "
+                    f"score {payload.get('opportunity_score', '?'):.1f}" if isinstance(payload.get("opportunity_score"), (int, float))
+                    else f"confidence {payload.get('confidence', '?')}"
+                )
+            elif dtype == "trade_blocked":
+                detail = f"reden: {payload.get('reason', '?')}"
+            elif dtype == "risk_decision":
+                if payload.get("blocked"):
+                    detail = f"geblokkeerd &mdash; {payload.get('block_reason', '?')}"
+                else:
+                    detail = f"risk {payload.get('risk_pct', 0)*100:.3f}%"
+            elif dtype == "position_management":
+                detail = f"{payload.get('action', '?')} &mdash; {payload.get('detail', '')}"
+            else:
+                detail = json.dumps(payload)[:120]
+
+            rows.append(
+                f'<tr><td data-label="Tijd">{_fmt_dt(row["ts"])}</td>'
+                f'<td data-label="Instrument">{row["instrument"] or "-"}</td>'
+                f'<td data-label="Type"><span class="tag {tag_class}">{tag_label}</span></td>'
+                f'<td data-label="Details">{detail}</td></tr>'
+            )
+
+        return SIGNALS_TEMPLATE.format(
+            count=len(decisions),
+            rows="".join(rows) if rows else '<tr><td colspan="4" class="empty">Nog geen signalen geregistreerd.</td></tr>',
         )
 
     @app.get("/api/status")

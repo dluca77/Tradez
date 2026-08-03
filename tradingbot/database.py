@@ -113,6 +113,14 @@ class Database:
                 (datetime.utcnow().isoformat(), event_type, detail),
             )
 
+    def fetch_recent_decisions(self, limit: int = 50) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT * FROM decisions ORDER BY id DESC LIMIT ?", (limit,)
+            )
+            return cur.fetchall()
+
     def record_trade_open(self, trade: dict[str, Any]) -> None:
         with self._connect() as conn:
             conn.execute(
