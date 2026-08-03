@@ -67,6 +67,21 @@ class MT5Broker(BrokerInterface):
         self.password = env("MT5_PASSWORD")
         self.server = env("MT5_SERVER")
         self.suffix = env("MT5_SYMBOL_SUFFIX", "") or ""
+        # Some symbols (esp. index CFDs) use a broker-specific name with no
+        # consistent convention at all — e.g. one MetaQuotes demo server
+        # lists the Nasdaq 100 as "USTEC" and the S&P 500 as "US500", not
+        # "NAS100"/"SP500" — a suffix alone can't fix that. Format:
+        # "NAS100=USTEC,SPX500=US500" (comma-separated KEY=VALUE pairs).
+        # Check your own MT5 Market Watch (Symbols search) for the exact
+        # names your broker uses.
+        overrides_raw = env("MT5_SYMBOL_OVERRIDES", "") or ""
+        self.symbol_overrides: dict[str, str] = {}
+        for pair in overrides_raw.split(","):
+            pair = pair.strip()
+            if not pair or "=" not in pair:
+                continue
+            key, _, value = pair.partition("=")
+            self.symbol_overrides[key.strip()] = value.strip()
         if not self.login or not self.password or not self.server:
             raise RuntimeError(
                 "MT5_LOGIN, MT5_PASSWORD, and MT5_SERVER must be set in the environment (.env) "
@@ -75,6 +90,8 @@ class MT5Broker(BrokerInterface):
         self._connected = False
 
     def _symbol(self, instrument: str) -> str:
+        if instrument in self.symbol_overrides:
+            return self.symbol_overrides[instrument] + self.suffix
         return MT5_SYMBOL_MAP.get(instrument, instrument) + self.suffix
 
     async def _run(self, fn, *args, **kwargs):
