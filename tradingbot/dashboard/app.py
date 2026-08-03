@@ -414,7 +414,20 @@ HISTORY_TEMPLATE = """<!doctype html>
 SIGNALS_TEMPLATE = """<!doctype html>
 <html><head><title>Signalen &amp; beslissingen</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="15">
+<script>
+  // A plain <meta refresh> reloads the whole page and resets scroll to the
+  // top every 15s — scrolling down to read older rows got yanked back up
+  // before you could finish reading them. Save/restore scroll position
+  // around the reload instead of losing it every cycle.
+  window.addEventListener('beforeunload', function () {{
+    sessionStorage.setItem('signalenScrollY', window.scrollY);
+  }});
+  window.addEventListener('DOMContentLoaded', function () {{
+    var y = sessionStorage.getItem('signalenScrollY');
+    if (y) window.scrollTo(0, parseInt(y, 10));
+  }});
+  setTimeout(function () {{ location.reload(); }}, 15000);
+</script>
 <style>
   * {{ box-sizing: border-box; }}
   html, body {{ overflow-x: hidden; width: 100%; }}
