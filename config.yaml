@@ -84,11 +84,18 @@ optimization:
   permanently_disabled_strategies:
     - momentum_scalping
     - vwap_reversion
-  # Per-instrument strategy allowlist. Every instrument runs every
-  # strategy by default (empty = no restriction) — only use this to hard
-  # exclude a strategy for an instrument if backtesting proves it never
-  # works there, beyond what tuning its parameters (below) can fix.
-  instrument_strategies: {}
+  # Per-instrument strategy allowlist, filled in from a real-data backtest
+  # (run_backtest_check.py, 60d 5m OHLCV via Yahoo Finance, Aug 2026) that
+  # showed the SAME strategy behaves oppositely on different instruments:
+  # pullback was strongly negative on XAUUSD (-675, avg_r -0.09) but
+  # strongly positive on NAS100 (+524, avg_r +0.22); breakout was strong on
+  # XAUUSD (+203, avg_r +0.21) but negative on SPX500 (-95, avg_r -0.09).
+  # momentum_scalping/vwap_reversion stay off everywhere via
+  # permanently_disabled_strategies above regardless of what's listed here.
+  instrument_strategies:
+    XAUUSD: [trend_following, breakout, breakout_retest, support_resistance, volatility_breakout]
+    NAS100: [trend_following, breakout, pullback, volatility_breakout]
+    SPX500: [trend_following, pullback, breakout_retest, support_resistance]
   # Per-instrument strategy PARAMETER overrides — every instrument still
   # runs every eligible strategy, but each can tune how sensitive it is
   # (ADX threshold, RSI levels, ATR multipliers, ...). Evidence-based from
