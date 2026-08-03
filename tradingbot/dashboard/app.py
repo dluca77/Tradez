@@ -687,7 +687,11 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
 
     @app.get("/signalen", response_class=HTMLResponse)
     async def signals():
-        decisions = controller.db.fetch_recent_decisions(limit=60)
+        # At ~15-20 decision rows per 15s scan cycle across 3 instruments, a
+        # limit of 60 covered under a minute of history — not enough to
+        # actually scroll through, even with scroll position now preserved
+        # across the auto-refresh.
+        decisions = controller.db.fetch_recent_decisions(limit=500)
 
         tag_map = {
             "signal_considered": ("tag-considered", "Overwogen"),

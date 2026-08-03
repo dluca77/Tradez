@@ -48,6 +48,7 @@ class AutonomousTradingController:
         self.notifications = NotificationService(
             enabled=cfg.get("notifications", "enabled", default=True),
             channel=cfg.get("notifications", "channel", default="log"),
+            webhook_url=cfg.get("notifications", "webhook_url", default=""),
         )
         self.optimizer = SelfOptimizationModule(self.db, cfg.get("optimization", "min_sample_size", default=30))
         self.permanently_disabled_strategies = set(
