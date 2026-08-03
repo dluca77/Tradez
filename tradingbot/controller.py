@@ -240,7 +240,12 @@ class AutonomousTradingController:
             db=self.db,
         )
 
-        min_conf = max(
+        # Base bar: still adapts over time from real win-rate evidence (see
+        # optimization.py), so it isn't a number we picked — but it's a
+        # single floor, and a single floor can't tell a lopsided-reward
+        # trade apart from a break-even-ish one. The floor alone is not
+        # the bar a signal has to clear.
+        base_conf = max(
             self.cfg.get("confidence", "min_confidence_default", default=75),
             self.optimizer.state.min_confidence,
         )
@@ -253,12 +258,23 @@ class AutonomousTradingController:
             "controller.scan_result",
             candidates_found=len(candidates),
             best_confidence=round(best_score, 1),
-            min_confidence_required=min_conf,
+            base_confidence_floor=base_conf,
             open_positions=len(open_positions),
         )
 
         for candidate in candidates:
             signal = candidate.signal
+            # The bar a signal must clear is not one fixed number. A trade
+            # offering a big payoff for the risk taken (high expected_reward_r)
+            # is worth entering even when the bot is only moderately sure,
+            # because the wins more than cover the extra losses; a trade with
+            # a thin payoff needs the bot to be much more convinced before
+            # it's worth the risk at all. This shifts the bar per signal
+            # instead of measuring every signal against the same number.
+            # rr=1.5 is the pivot: richer reward lowers the bar, thinner
+            # reward raises it, each clamped so the bar stays sane.
+            rr_shift = max(-20.0, min(25.0, (1.5 - signal.expected_reward_r) * 12.0))
+            min_conf = max(50.0, min(95.0, base_conf + rr_shift))
             # Every one of these filters used to `continue` silently before
             # anything was logged — a candidate blocked here (e.g. by the
             # per-instrument strategy allowlist) never showed up anywhere,
@@ -268,7 +284,9 @@ class AutonomousTradingController:
             if signal.confidence < min_conf:
                 self.db.log_decision("signal_filtered", {
                     "reason": "confidence_below_threshold", "confidence": signal.confidence,
-                    "min_confidence_required": min_conf, "strategy": signal.strategy.value,
+                    "min_confidence_required": round(min_conf, 1),
+                    "expected_reward_r": round(signal.expected_reward_r, 2),
+                    "strategy": signal.strategy.value,
                 }, instrument=signal.instrument)
                 continue
             if signal.strategy.value in self.optimizer.state.disabled_strategies:

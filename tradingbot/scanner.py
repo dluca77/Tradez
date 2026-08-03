@@ -95,7 +95,13 @@ async def scan_markets(
         avg_spread_pips = profile.get("spread_pips", 1.0)
 
         regime = detect_regime(df_exec, spread_pips, avg_spread_pips)
-        if regime in (MarketRegime.LOW_LIQUIDITY, MarketRegime.UNPREDICTABLE):
+        # LOW_LIQUIDITY is an actual cost fact (spread blown out relative to
+        # normal), not a label-based exclusion — trading is genuinely too
+        # expensive right now regardless of strategy. Every other regime,
+        # including UNPREDICTABLE, still lets every strategy look at the
+        # candles and decide for itself; the regime label only informs
+        # confidence scoring below, it never blocks a strategy outright.
+        if regime == MarketRegime.LOW_LIQUIDITY:
             _log_skip(db, instrument, "regime_not_tradeable", regime=regime.value)
             continue
 
