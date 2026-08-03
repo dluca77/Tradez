@@ -525,6 +525,17 @@ class AutonomousTradingController:
             order_type=order_type,
         )
         if not order:
+            # execution.open_position already logs the concrete reason
+            # (zero quantity / broker rejected / not filled) to the
+            # terminal, but that trace never reached the /signalen decision
+            # log or dashboard — a signal that passed every check (good
+            # confidence, risk ok) but then silently failed on the actual
+            # order placement looked identical to "still being considered",
+            # cycle after cycle, with zero visible reason why it never
+            # became a trade.
+            self.db.log_decision("trade_blocked", {
+                "reason": "order_not_filled", "strategy": signal.strategy.value,
+            }, instrument=signal.instrument)
             return False
 
         trade_id = order.id
