@@ -13,8 +13,9 @@ from tradingbot.broker.base import BrokerInterface
 from tradingbot.broker.mock import INSTRUMENT_PROFILES
 from tradingbot.confidence import ConfidenceInputs, compute_confidence
 from tradingbot.costs import cost_to_profit_ratio, estimate_costs
-from tradingbot.models import MarketRegime, Signal, StrategyName
+from tradingbot.models import Direction, MarketRegime, Signal, StrategyName
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
+from tradingbot.position_sizing import MIN_STOP_DISTANCE_PCT
 from tradingbot.regime import detect_regime
 from tradingbot.sessions import session_quality
 from tradingbot.strategy_selector import generate_signals
@@ -128,6 +129,25 @@ async def scan_markets(
             entry_price = quote.mid
             stop_loss = result.stop_loss + offset
             take_profits = [tp + offset for tp in result.take_profits]
+
+            # position_sizing.py floors the distance it sizes the position
+            # against (to stop a near-zero stop from blowing quantity up),
+            # but until now that floor only affected the quantity math —
+            # the stop actually sent to the broker stayed at its original,
+            # tighter distance. That mismatch meant the dollar amount lost
+            # when a tight-stop trade (momentum_scalping, vwap_reversion)
+            # hit its stop was smaller than the risk_pct the trade was
+            # sized for, while a normal-stop trade (trend_following,
+            # pullback) lost the full intended amount — so "-1.00R" ended
+            # up meaning wildly different euro amounts depending on which
+            # strategy opened the trade. Widening the real stop here, at
+            # the source, keeps sizing and the actual stop in lockstep.
+            min_distance = entry_price * MIN_STOP_DISTANCE_PCT
+            if abs(entry_price - stop_loss) < min_distance:
+                stop_loss = (
+                    entry_price - min_distance if result.direction == Direction.LONG
+                    else entry_price + min_distance
+                )
 
             spread_factor = quote.spread / avg_spread if avg_spread else 1.0
             htf_aligned = True  # strategies already check HTF where relevant
