@@ -26,6 +26,8 @@ YAHOO_TICKERS = {
     "GER40": "^GDAXI",
     "USOIL": "CL=F",
     "BTCUSD": "BTC-USD",
+    "XPTUSD": "PL=F",
+    "XPDUSD": "PA=F",
 }
 
 

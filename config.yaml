@@ -12,10 +12,19 @@ instruments:
   # (profit factor 0.28-0.79) over 400-1600 trades each — not noise, a
   # proven losing edge with this strategy set. Re-add an instrument here
   # only after a fresh real-data backtest shows it's actually viable.
+  # 2026-08-04: added XPDUSD (palladium, profit factor 1.11, +1871 over 1109
+  # trades) and XPTUSD (platinum, profit factor 0.95 overall but its
+  # trend_following alone is +1077.77 at 58% win rate) from a fresh
+  # run_backtest_check.py pass across every instrument this MT5 account can
+  # actually trade (confirmed via symbol_info trade_mode). USOIL and BTCUSD
+  # also backtested but aren't real CFDs on this account (only leveraged
+  # equity ETFs) - not addable regardless of backtest result.
   enabled:
     - XAUUSD
     - NAS100
     - SPX500
+    - XPDUSD
+    - XPTUSD
   crypto_enabled: false
 
 timeframes:
@@ -118,6 +127,15 @@ optimization:
     NAS100:
       trend_following: {adx_threshold: 28, stop_atr_mult: 2.0}
       vwap_reversion: {dist_atr_mult: 2.0, stop_atr_mult: 1.3}
+    # 2026-08-04: XPTUSD's 60d backtest was net negative overall (0.95
+    # profit factor) but that blends two opposite strategies - trend_following
+    # alone was strong (+1077.77, 58.1% win rate, defaults untouched since
+    # they already work), while vwap_reversion alone was the reason the
+    # instrument nets negative (-785.40, 12.7% win rate, avg -0.45R, worse
+    # than XAUUSD's already-poor vwap_reversion numbers) - damped further
+    # than XAUUSD's.
+    XPTUSD:
+      vwap_reversion: {dist_atr_mult: 2.2, stop_atr_mult: 1.3}
 
 database:
   path: data/tradingbot.db
