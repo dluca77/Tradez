@@ -107,4 +107,5 @@ INSTRUMENT_CURRENCIES = {
     "AUDUSD": ["AUD", "USD"], "USDCAD": ["USD", "CAD"],
     "NAS100": ["USD"], "SPX500": ["USD"], "GER40": ["EUR"],
     "USOIL": ["USD"],
+    "UK100": ["GBP"], "JPN225": ["JPY"],
 }

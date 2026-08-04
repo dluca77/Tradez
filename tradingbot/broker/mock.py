@@ -23,6 +23,8 @@ INSTRUMENT_PROFILES = {
     "SPX500": dict(price=5300.0, pip=0.5, spread_pips=0.6, ann_vol=0.15),
     "GER40": dict(price=18200.0, pip=1.0, spread_pips=1.2, ann_vol=0.16),
     "USOIL": dict(price=78.0, pip=0.01, spread_pips=3.0, ann_vol=0.35),
+    "UK100": dict(price=10910.0, pip=1.0, spread_pips=0.7, ann_vol=0.14),
+    "JPN225": dict(price=64110.0, pip=1.0, spread_pips=14.25, ann_vol=0.18),
 }
 
 

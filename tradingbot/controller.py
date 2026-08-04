@@ -79,6 +79,26 @@ class AutonomousTradingController:
             events_file=cfg.get("news", "events_file", default=None),
         )
 
+        # scanner.py/costs.py/this module all fall back to {} for an
+        # instrument missing from INSTRUMENT_PROFILES rather than raising -
+        # necessary so one bad lookup can't take down a whole scan cycle,
+        # but it means a newly enabled instrument with no matching profile
+        # entry silently gets a ~10000x inflated spread_factor (division
+        # against the {}.get("pip", 0.0001) default) instead of an error.
+        # That crushes its confidence score and risk sizing to near zero -
+        # indistinguishable from "no good setups" - for as long as nobody
+        # notices. Confirmed live: UK100/JPN225 sat at ~0 trades for 5
+        # hours after being enabled, capped at confidence ~59 vs a required
+        # ~68, purely from this missing entry, not weak signals.
+        missing_profiles = [i for i in cfg.instruments if i not in INSTRUMENT_PROFILES]
+        if missing_profiles:
+            log.error(
+                "controller.instrument_missing_profile",
+                instruments=missing_profiles,
+                detail="spread/risk math will be badly wrong for these until "
+                       "an entry is added to INSTRUMENT_PROFILES in broker/mock.py",
+            )
+
         self.state = SessionState(
             day_start_equity=cfg.starting_balance,
             week_start_equity=cfg.starting_balance,
