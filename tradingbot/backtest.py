@@ -115,9 +115,18 @@ def run_backtest(
             "direction": sig.direction,
             "strategy": strategy_name.value,
             "entry_price": sig.entry_price,
-            "stop_loss": sig.take_profits[0] if False else sig.stop_loss,
+            "stop_loss": sig.stop_loss,
             "initial_stop": sig.stop_loss,
-            "take_profit": sig.take_profits[0],
+            # Match the live broker-side TP (controller.py's
+            # take_profits[-1], the furthest target) rather than
+            # take_profits[0] (the first, ~1R target) - this backtest was
+            # still simulating the old capped-at-1R exit even after that
+            # was fixed live, so results no longer matched what the bot
+            # actually does. Still a simplification either way: this
+            # backtest has no partial-close/trailing-stop simulation, so it
+            # under-represents the real position_manager.py behavior in
+            # both directions.
+            "take_profit": sig.take_profits[-1],
             "quantity": sizing.lots_or_units,
             "opened_index": i,
         }

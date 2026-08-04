@@ -127,6 +127,33 @@ class PositionManagementEngine:
                 pos.trailing_active = True
                 actions.append(ManagementAction("trailing_stop", f"trailed to {new_stop:.5f}"))
 
+        # 3b) Time-decaying profit lock ("ROI table", concept borrowed from
+        # freqtrade's minimum_roi): waiting the full max_hold for the
+        # strategy's original target risks giving back real, already-earned
+        # profit if price reverses before getting there. The R bar needed
+        # to lock in a full exit drops as more of max_hold elapses, so a
+        # trade sitting on decent-but-not-ideal profit late in its life
+        # gets banked instead of gambled on reaching the original target
+        # (or worse, riding the max-hold time exit down to a wash/loss).
+        if self.max_hold.total_seconds() > 0:
+            elapsed_frac = (datetime.utcnow() - pos.opened_at) / self.max_hold
+            roi_bar = None
+            if elapsed_frac >= 0.75:
+                roi_bar = 0.3
+            elif elapsed_frac >= 0.5:
+                roi_bar = 1.0
+            elif elapsed_frac >= 0.25:
+                roi_bar = 1.5
+            if roi_bar is not None and r >= roi_bar:
+                if await self.broker.close_position(pos.id, fraction=1.0):
+                    actions.append(ManagementAction(
+                        "exit_roi_decay",
+                        f"locked in {r:.2f}R at {elapsed_frac:.0%} of max hold (bar was {roi_bar}R)",
+                    ))
+                    return actions
+                else:
+                    log.error("position.close_failed", position_id=pos.id, reason="roi_decay")
+
         # 4) Signal invalidated -> exit
         if not signal_still_valid:
             if await self.broker.close_position(pos.id, fraction=1.0):
