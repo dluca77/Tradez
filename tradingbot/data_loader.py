@@ -28,6 +28,9 @@ YAHOO_TICKERS = {
     "BTCUSD": "BTC-USD",
     "XPTUSD": "PL=F",
     "XPDUSD": "PA=F",
+    "ETHUSD": "ETH-USD",
+    "UK100": "^FTSE",
+    "JPN225": "^N225",
 }
 
 

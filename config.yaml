@@ -12,21 +12,30 @@ instruments:
   # (profit factor 0.28-0.79) over 400-1600 trades each — not noise, a
   # proven losing edge with this strategy set. Re-add an instrument here
   # only after a fresh real-data backtest shows it's actually viable.
-  # 2026-08-04: NAS100 and SPX500 removed (not a strategy exclusion - an
-  # instrument-level restriction, same as the FX pairs above). Confirmed via
-  # symbol_info().trade_mode that this specific MetaQuotes-Demo account has
-  # the entire "Indexes" group disabled - every order gets broker-rejected
-  # with retcode 10017 "Trade disabled" regardless of signal quality. Not
-  # fixable from this side; needs a different broker/account with real index
-  # CFD access. XPDUSD (palladium) and XPTUSD (platinum) also removed - both
-  # backtested well on Yahoo futures data (profit factor 1.11 / 0.95) but
-  # this broker's real live spread is 48-72x wider than XAUUSD's on those
-  # two, so the cost-to-profit filter (costs.max_cost_to_expected_profit_ratio)
-  # correctly blocks every signal - confirmed live, not a single trade got
-  # through. Re-add any of these once a broker/account is confirmed to
-  # support them (real trade_mode + real spread, not just a backtest).
+  # 2026-08-04: NAS100 and SPX500 were removed earlier (not a strategy
+  # exclusion - an instrument-level restriction, same as the FX pairs above)
+  # after confirming via symbol_info().trade_mode that the MetaQuotes-Demo
+  # account has the entire "Indexes" group disabled (retcode 10017 "Trade
+  # disabled" regardless of signal quality). Re-added same day after
+  # switching broker account to Vantage (VantageMarkets-Demo): confirmed live
+  # trade_mode=4 (full trading) plus tight real spreads for both (NAS100
+  # ~0.80pts on ~29000, SP500 ~0.36pts on ~7624). XPDUSD (palladium) and
+  # XPTUSD (platinum) remain removed - both backtested well on Yahoo futures
+  # data (profit factor 1.11 / 0.95) but MetaQuotes-Demo's real live spread
+  # was 48-72x wider than XAUUSD's on those two, so the cost-to-profit filter
+  # (costs.max_cost_to_expected_profit_ratio) correctly blocked every signal -
+  # not re-verified yet on Vantage. Re-add once confirmed on this broker too.
+  # UK100 and JPN225 added 2026-08-04: fresh real-data backtest (Yahoo, 60d
+  # 5m) showed profit factor 1.03 for both (similar tier to XAUUSD's own
+  # accepted bar), plus tight live Vantage spreads (UK100 ~0.7pts/10909,
+  # JPN225ft ~14.25pts/64107). BTCUSD/ETHUSD backtested near/below breakeven
+  # (0.99 / 0.96) - not added; crypto also stays off via crypto_enabled below.
   enabled:
     - XAUUSD
+    - NAS100
+    - SPX500
+    - UK100
+    - JPN225
   crypto_enabled: false
 
 timeframes:

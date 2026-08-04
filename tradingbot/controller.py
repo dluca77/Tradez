@@ -541,7 +541,16 @@ class AutonomousTradingController:
             direction=signal.direction,
             quantity=sizing.lots_or_units,
             stop_loss=signal.stop_loss,
-            take_profit=signal.take_profits[0],
+            # Broker-side hard TP is a safety net at the strategy's furthest
+            # target, not a cap at the first one - the position manager
+            # (position_manager.py) is the one that actually banks partial
+            # profit at 1.5R/2R and trails the remainder. Using
+            # take_profits[0] here made the broker auto-close every winner
+            # at ~1R before that logic ever ran, silently turning an
+            # intended asymmetric (up to 2.5R) payoff into a near-1:1
+            # bracket - confirmed live on 2026-08-04 (10 stop-outs averaging
+            # -1.00R vs 7 take-profits averaging only +0.90R).
+            take_profit=signal.take_profits[-1],
             order_type=order_type,
         )
         if not order:
@@ -563,7 +572,7 @@ class AutonomousTradingController:
             "id": trade_id, "instrument": signal.instrument, "direction": signal.direction.value,
             "strategy": signal.strategy.value, "regime": signal.regime.value, "confidence": signal.confidence,
             "entry_price": order.filled_price, "quantity": sizing.lots_or_units, "stop_loss": signal.stop_loss,
-            "take_profit": signal.take_profits[0], "risk_amount": sizing.risk_amount,
+            "take_profit": signal.take_profits[-1], "risk_amount": sizing.risk_amount,
             "opened_at": datetime.utcnow().isoformat(), "mode": self.cfg.mode,
         })
         self.state.trades_today += 1
