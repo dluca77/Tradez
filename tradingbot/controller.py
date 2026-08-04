@@ -111,6 +111,7 @@ class AutonomousTradingController:
         self.running = False
         self.paused = False
         self._day_date = datetime.utcnow().date()
+        self._week_key = datetime.utcnow().isocalendar()[:2]
 
     async def startup(self) -> None:
         await self.recovery.recover()
@@ -205,9 +206,13 @@ class AutonomousTradingController:
         if now - self.state.hour_window_start >= timedelta(hours=1):
             self.state.trades_this_hour = 0
             self.state.hour_window_start = now
-        if now.date() != self._day_date:
+        day_rolled = now.date() != self._day_date
+        if day_rolled:
             self.state.trades_today = 0
             self._day_date = now.date()
+        week_rolled = now.isocalendar()[:2] != self._week_key
+        if week_rolled:
+            self._week_key = now.isocalendar()[:2]
 
         # 1-2: broker + account
         connected = await self.broker.is_connected()
@@ -218,6 +223,22 @@ class AutonomousTradingController:
 
         account = await self.broker.get_account_info()
         self.safety.mark_data_received()
+
+        # day_start_equity/day_peak_equity/week_start_equity previously only
+        # got set once in startup() and never again, so the profit-giveback,
+        # daily-loss and weekly-loss checks kept comparing against the
+        # FIRST day's baseline forever — a good day's peak could still block
+        # every trade days later, and only a full process restart cleared
+        # it (observed 2026-08-04: a giveback block from one trading day
+        # was still active in the next run). Reset the baselines here on
+        # the same calendar-day/week rollover that already resets the
+        # trade counters above.
+        if day_rolled:
+            self.state.day_start_equity = account.equity
+            self.state.day_peak_equity = account.equity
+        if week_rolled:
+            self.state.week_start_equity = account.equity
+
         self.state.peak_equity = max(self.state.peak_equity, account.equity)
         self.state.day_peak_equity = max(self.state.day_peak_equity, account.equity)
 

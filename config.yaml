@@ -61,7 +61,7 @@ risk:
   cooldown_minutes_after_losses: 60
   daily_profit_lock_pct: 0.02
   daily_profit_soft_lock_pct: 0.015
-  daily_profit_giveback_pct: 0.5   # stop if 50% of day's peak profit is given back
+  daily_profit_giveback_pct: 0.65   # stop if 65% of day's peak profit is given back
   martingale_forbidden: true
 
 confidence:
