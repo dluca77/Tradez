@@ -40,8 +40,8 @@ class NotificationService:
         self._dispatch("info", f"Opened {direction} {instrument} (confidence {confidence:.0f})")
 
     def trade_closed(self, instrument: str, pnl: float, r_multiple: float) -> None:
-        level = "info" if pnl >= 0 else "warning"
-        self._dispatch(level, f"Closed {instrument}: {pnl:+.2f} EUR")
+        icon = "✅" if pnl >= 0 else "\U0001F53B"  # green checkmark / red down-triangle
+        self._dispatch("info", f"{icon} Closed {instrument}: {pnl:+.2f} EUR")
 
     def large_move(self, instrument: str, pnl: float) -> None:
         self._dispatch("warning", f"Large move on {instrument}: {pnl:+.2f}")
