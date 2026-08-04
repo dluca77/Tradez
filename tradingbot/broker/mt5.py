@@ -199,6 +199,22 @@ class MT5Broker(BrokerInterface):
             for r in rates
         ]
 
+    async def get_risk_conversion_factor(self, instrument: str) -> float:
+        # MT5's own trade_tick_value already reflects the broker's live FX
+        # conversion from this symbol's quote currency into the account
+        # currency - piggybacking on that is far more robust than us trying
+        # to separately look up e.g. a EURJPY rate ourselves. Derivation:
+        # real EUR pnl for `lots` lots over `stop_distance` price units is
+        # lots * (stop_distance / tick_size) * tick_value. Our sizing computes
+        # quantity = risk_amount / stop_distance, then lots = quantity /
+        # contract_size. Solving for the risk_amount that makes real pnl
+        # equal the intended risk_amount gives this factor.
+        symbol = self._symbol(instrument)
+        info = await self._run(self.mt5.symbol_info, symbol)
+        if info is None or not info.trade_tick_value or not info.trade_tick_size:
+            return 1.0
+        return info.trade_contract_size * info.trade_tick_size / info.trade_tick_value
+
     async def _to_broker_volume(self, symbol: str, quantity: float) -> float:
         # tradingbot's position sizing computes `quantity` in underlying
         # units (e.g. troy ounces for XAUUSD, base-currency units for FX)

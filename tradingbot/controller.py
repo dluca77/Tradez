@@ -542,7 +542,17 @@ class AutonomousTradingController:
                 self.notifications.risk_limit_hit(decision.block_reason)
             return False
 
-        sizing = calculate_position_size(signal.instrument, equity, decision.risk_pct, signal.entry_price, signal.stop_loss)
+        # calculate_position_size() assumes 1 unit of quote-currency price
+        # movement equals 1 unit of account currency - true enough for
+        # USD/GBP instruments on a EUR account to not matter much, but
+        # wildly wrong for a JPY-denominated instrument (~155-180:1),
+        # confirmed live on JPN225: real risk taken landed ~180x smaller
+        # than intended. get_risk_conversion_factor() corrects for it using
+        # the broker's own live tick economics.
+        conversion_factor = await self.broker.get_risk_conversion_factor(signal.instrument)
+        sizing = calculate_position_size(
+            signal.instrument, equity, decision.risk_pct * conversion_factor, signal.entry_price, signal.stop_loss
+        )
         if sizing.lots_or_units <= 0:
             log.warning(
                 "trade.blocked_zero_size",

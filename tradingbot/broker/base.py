@@ -83,3 +83,17 @@ class BrokerInterface(ABC):
         deal/trade history should override this. Returning None means the
         caller must fall back to an approximate/zero record."""
         return None
+
+    async def get_risk_conversion_factor(self, instrument: str) -> float:
+        """Multiplier applied to the account-currency risk amount before
+        position_sizing.calculate_position_size(), correcting for an
+        instrument quoted in a currency other than the account currency
+        (e.g. a JPY-denominated index CFD on a EUR account) - without this,
+        `quantity = risk_amount / stop_distance` silently assumes 1 unit of
+        quote-currency price movement equals 1 unit of account currency,
+        which is wildly wrong for a ~155-180:1 currency pair like JPY/EUR.
+        Confirmed live: JPN225 risk was landing ~180x smaller than intended
+        (a few cents instead of tens of euros) purely from this gap.
+        Default 1.0 (no adjustment) for brokers without real per-symbol
+        tick economics (mock/backtest) - not a live-money path."""
+        return 1.0
