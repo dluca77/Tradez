@@ -33,6 +33,7 @@ class RiskConfig:
     daily_profit_soft_lock_pct: float
     daily_profit_giveback_pct: float
     martingale_forbidden: bool
+    daily_profit_lock_min_confidence: float = 90.0
 
 
 @dataclass

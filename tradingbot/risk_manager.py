@@ -97,8 +97,24 @@ class DynamicRiskManager:
             giveback = (state.day_peak_equity - equity) / (state.day_peak_equity - state.day_start_equity)
             if giveback >= self.cfg.daily_profit_giveback_pct and day_peak_gain >= self.cfg.daily_profit_soft_lock_pct:
                 return RiskDecision(0.0, ["giving back too much of day's profit"], blocked=True, block_reason="profit_giveback")
+        # Reaching the daily profit target used to hard-block every trade
+        # for the rest of the day, full stop. Isaak's call (2026-08-05):
+        # once a day is already this good, don't shut trading down
+        # entirely - only let the strongest signals through, so a genuine
+        # A+ setup isn't left on the table just because a decent day
+        # already happened. Below this confidence bar, still a hard block.
+        if day_pnl_pct >= self.cfg.daily_profit_lock_pct and confidence < self.cfg.daily_profit_lock_min_confidence:
+            return RiskDecision(
+                0.0,
+                [f"daily profit target {day_pnl_pct:.2%} reached, only confidence >= "
+                 f"{self.cfg.daily_profit_lock_min_confidence:.0f} still allowed"],
+                blocked=True, block_reason="daily_profit_lock",
+            )
         if day_pnl_pct >= self.cfg.daily_profit_lock_pct:
-            return RiskDecision(0.0, [f"daily profit target {day_pnl_pct:.2%} reached, locking in gains"], blocked=True, block_reason="daily_profit_lock")
+            reasons.append(
+                f"daily profit target {day_pnl_pct:.2%} reached, but confidence "
+                f"{confidence:.1f} cleared the raised bar -> still allowed"
+            )
 
         if open_positions_count >= self.cfg.max_concurrent_positions:
             return RiskDecision(0.0, ["max concurrent positions reached"], blocked=True, block_reason="max_positions")

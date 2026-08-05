@@ -62,6 +62,7 @@ risk:
   daily_profit_lock_pct: 0.02
   daily_profit_soft_lock_pct: 0.015
   daily_profit_giveback_pct: 0.65   # stop if 65% of day's peak profit is given back
+  daily_profit_lock_min_confidence: 90   # after daily_profit_lock_pct is hit, only trade signals >= this confidence
   martingale_forbidden: true
 
 confidence:
