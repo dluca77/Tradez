@@ -183,6 +183,17 @@ optimization:
     # validation pf=0.75/211) - every one overfit or unreliable, same
     # pattern as NAS100/SPX500. Left entirely at defaults.
     UK100: {}
+    # run_hyperopt.py 2026-08-05, 20 trials each: pullback (train
+    # pf=1.31/159 trades, validation pf=0.83/95), breakout_retest (train
+    # pf=1.22/187, validation pf=0.99/116), vwap_reversion (train
+    # pf=1.16/184, validation pf=0.95/116), support_resistance (train
+    # pf=1.16/184, validation pf=0.95/116) - every one overfit, same
+    # pattern as every other instrument in this sweep. Left entirely at
+    # defaults. (vwap_reversion/support_resistance landed on identical
+    # trade counts/profit factors - plausible given both search spaces are
+    # small and converge to similar stop_atr_mult-dominated behavior on
+    # the same 60d data, not verified further since neither passed anyway.)
+    JPN225: {}
     XPTUSD:
       vwap_reversion: {dist_atr_mult: 2.2, stop_atr_mult: 1.3}
 
