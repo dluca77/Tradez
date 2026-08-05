@@ -175,6 +175,14 @@ optimization:
     # instrument nets negative (-785.40, 12.7% win rate, avg -0.45R, worse
     # than XAUUSD's already-poor vwap_reversion numbers) - damped further
     # than XAUUSD's.
+    # run_hyperopt.py 2026-08-05, 20 trials each: pullback (train
+    # pf=1.13/298 trades, validation pf=0.76/143), breakout_retest (train
+    # pf=1.04/325, validation pf=0.83/196), vwap_reversion (train
+    # pf=0.98/336 - below 1.0 on its own training split, not trustworthy
+    # regardless of validation), support_resistance (train pf=1.07/326,
+    # validation pf=0.75/211) - every one overfit or unreliable, same
+    # pattern as NAS100/SPX500. Left entirely at defaults.
+    UK100: {}
     XPTUSD:
       vwap_reversion: {dist_atr_mult: 2.2, stop_atr_mult: 1.3}
 
