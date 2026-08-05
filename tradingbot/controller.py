@@ -117,6 +117,8 @@ class AutonomousTradingController:
         await self.recovery.recover()
         self.safety.mark_data_received()
 
+        persisted = self.db.load_session_state()
+
         # The session baselines must reflect the REAL broker's actual
         # starting equity, not cfg.starting_balance (a mock/papertrading
         # assumption of 10000). Against a real account with a different
@@ -124,22 +126,45 @@ class AutonomousTradingController:
         # to the config's 10000 baseline produced a bogus "900% daily
         # profit" reading that immediately tripped the profit-lock and
         # blocked every trade from the first cycle onward.
+        #
+        # day_start_equity/day_peak_equity/week_start_equity/peak_equity are
+        # restored from the database when available instead of always being
+        # re-seeded from current equity - otherwise every restart silently
+        # discarded that day's/week's/month's protection (a giveback or
+        # profit-lock guard that had already proven itself would reset back
+        # to "starts now"). A stale persisted day/week baseline (spanning an
+        # actual calendar rollover while the process was down) self-corrects
+        # on the first run_cycle() the same way a rollover during a run does.
         try:
             account = await self.broker.get_account_info()
-            self.state.day_start_equity = account.equity
-            self.state.week_start_equity = account.equity
+            if persisted and persisted["day_start_equity"] is not None:
+                self.state.day_start_equity = persisted["day_start_equity"]
+                self.state.day_peak_equity = persisted["day_peak_equity"]
+            else:
+                self.state.day_start_equity = account.equity
+                self.state.day_peak_equity = account.equity
+            if persisted and persisted["week_start_equity"] is not None:
+                self.state.week_start_equity = persisted["week_start_equity"]
+            else:
+                self.state.week_start_equity = account.equity
+            if persisted and persisted["peak_equity"] is not None:
+                self.state.peak_equity = max(persisted["peak_equity"], account.equity)
+            else:
+                self.state.peak_equity = account.equity
             self.state.month_start_equity = account.equity
-            self.state.peak_equity = account.equity
-            self.state.day_peak_equity = account.equity
+            self.state.day_peak_equity = max(self.state.day_peak_equity, account.equity)
         except Exception as exc:  # noqa: BLE001
             log.error("controller.startup_equity_fetch_failed", error=str(exc))
+
+        if persisted and persisted["week_key"]:
+            year_str, week_str = persisted["week_key"].split("-")
+            self._week_key = (int(year_str), int(week_str))
 
         # Restore risk/safety state (cooldowns, loss streaks, kill switch,
         # trade counters) that was in effect when the process last stopped.
         # Without this, every restart silently wiped these back to defaults
         # in memory, letting the bot bypass a cooldown or trade-limit block
         # that should still have applied.
-        persisted = self.db.load_session_state()
         if persisted:
             self.state.consecutive_losses = persisted["consecutive_losses"]
             self.state.trades_today = persisted["trades_today"]
@@ -193,6 +218,11 @@ class AutonomousTradingController:
             kill_switch=self.state.kill_switch,
             risk_scale=self.state.risk_scale,
             day_date=self._day_date,
+            day_start_equity=self.state.day_start_equity,
+            day_peak_equity=self.state.day_peak_equity,
+            week_start_equity=self.state.week_start_equity,
+            peak_equity=self.state.peak_equity,
+            week_key=f"{self._week_key[0]}-{self._week_key[1]}",
         )
 
     async def run_cycle(self) -> None:
@@ -238,6 +268,12 @@ class AutonomousTradingController:
             self.state.day_peak_equity = account.equity
         if week_rolled:
             self.state.week_start_equity = account.equity
+        if day_rolled or week_rolled:
+            # Flush immediately rather than waiting for the next trade to
+            # close - otherwise a crash/restart between the in-memory reset
+            # above and the next trade-triggered _persist_state() would
+            # reload yesterday's stale baseline from the database.
+            self._persist_state()
 
         self.state.peak_equity = max(self.state.peak_equity, account.equity)
         self.state.day_peak_equity = max(self.state.day_peak_equity, account.equity)

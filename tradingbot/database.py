@@ -83,6 +83,29 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        # day_start_equity/day_peak_equity/week_start_equity/peak_equity used
+        # to live only in memory, reset to the broker's current equity on
+        # every single restart - which silently discarded the daily-loss,
+        # weekly-loss, profit-giveback and monthly-drawdown baselines every
+        # time the bot process was restarted (observed repeatedly on
+        # 2026-08-04/05: every deploy wiped that day's protection). ALTER
+        # TABLE here instead of adding these to SCHEMA directly because
+        # CREATE TABLE IF NOT EXISTS is a no-op against the already-existing
+        # session_state table on this VPS's live database.
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(session_state)")}
+        new_columns = {
+            "day_start_equity": "REAL",
+            "day_peak_equity": "REAL",
+            "week_start_equity": "REAL",
+            "peak_equity": "REAL",
+            "week_key": "TEXT",
+        }
+        for name, coltype in new_columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE session_state ADD COLUMN {name} {coltype}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -165,17 +188,26 @@ class Database:
         kill_switch: bool,
         risk_scale: float,
         day_date,
+        day_start_equity: float,
+        day_peak_equity: float,
+        week_start_equity: float,
+        peak_equity: float,
+        week_key: str,
     ) -> None:
         # Single-row upsert (id is pinned to 1) so risk/safety state survives
         # a bot restart instead of silently resetting to defaults — a reset
         # consecutive_losses/cooldown_until/kill_switch lets the bot bypass
-        # a safety block that should still be in effect.
+        # a safety block that should still be in effect. Same reasoning for
+        # the equity baselines: without persisting these, a restart reset
+        # the daily/weekly-loss and profit-giveback/lock protection to
+        # "starts now", discarding whatever the day had already proven.
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO session_state
                    (id, consecutive_losses, trades_today, trades_this_hour, hour_window_start,
-                    cooldown_until, kill_switch, risk_scale, day_date)
-                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                    cooldown_until, kill_switch, risk_scale, day_date,
+                    day_start_equity, day_peak_equity, week_start_equity, peak_equity, week_key)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        consecutive_losses=excluded.consecutive_losses,
                        trades_today=excluded.trades_today,
@@ -184,12 +216,18 @@ class Database:
                        cooldown_until=excluded.cooldown_until,
                        kill_switch=excluded.kill_switch,
                        risk_scale=excluded.risk_scale,
-                       day_date=excluded.day_date""",
+                       day_date=excluded.day_date,
+                       day_start_equity=excluded.day_start_equity,
+                       day_peak_equity=excluded.day_peak_equity,
+                       week_start_equity=excluded.week_start_equity,
+                       peak_equity=excluded.peak_equity,
+                       week_key=excluded.week_key""",
                 (
                     consecutive_losses, trades_today, trades_this_hour,
                     hour_window_start.isoformat(),
                     cooldown_until.isoformat() if cooldown_until else None,
                     int(kill_switch), risk_scale, day_date.isoformat(),
+                    day_start_equity, day_peak_equity, week_start_equity, peak_equity, week_key,
                 ),
             )
 
