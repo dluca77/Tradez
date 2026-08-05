@@ -66,6 +66,22 @@ def compute_performance(db: Database) -> PerformanceSummary:
     )
 
 
+def per_instrument_pnl_today(db: Database, day_date) -> dict[str, float]:
+    # Realized pnl only (closed trades) - an open position's unrealized pnl
+    # on that instrument isn't included. A pragmatic simplification: getting
+    # live per-instrument unrealized pnl into this check would need much
+    # more plumbing, and a losing streak that actually trips this cap will
+    # already have real closed losses behind it.
+    rows = _real_trades(db.fetch_closed_trades())
+    day_start = f"{day_date.isoformat()}T00:00:00"
+    out: dict[str, float] = {}
+    for row in rows:
+        if not row["opened_at"] or row["opened_at"] < day_start:
+            continue
+        out[row["instrument"]] = out.get(row["instrument"], 0.0) + (row["pnl"] or 0.0)
+    return out
+
+
 def historical_winrates(db: Database) -> dict[str, float]:
     rows = _real_trades(db.fetch_closed_trades())
     buckets: dict[str, list] = {}

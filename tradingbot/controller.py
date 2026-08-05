@@ -22,7 +22,7 @@ from tradingbot.models import Direction
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
 from tradingbot.notifications import NotificationService
 from tradingbot.optimization import SelfOptimizationModule
-from tradingbot.performance import compute_performance, historical_winrates
+from tradingbot.performance import compute_performance, historical_winrates, per_instrument_pnl_today
 from tradingbot.position_manager import PositionManagementEngine
 from tradingbot.position_sizing import calculate_position_size
 from tradingbot.recovery import RecoveryService
@@ -565,6 +565,9 @@ class AutonomousTradingController:
         spread_factor = quote.spread / avg_spread if avg_spread else 1.0
         volatility_factor = 1.0  # already embedded in regime filtering upstream
 
+        instrument_pnl_today = per_instrument_pnl_today(self.db, self._day_date).get(signal.instrument, 0.0)
+        instrument_daily_pnl_pct = instrument_pnl_today / equity if equity else 0.0
+
         decision = self.risk_manager.evaluate(
             confidence=signal.confidence,
             equity=equity,
@@ -574,6 +577,7 @@ class AutonomousTradingController:
             correlation_penalty=corr_penalty,
             volatility_factor=volatility_factor,
             spread_factor=spread_factor,
+            instrument_daily_pnl_pct=instrument_daily_pnl_pct,
         )
         decision.risk_pct *= self.optimizer.state.risk_multiplier
 

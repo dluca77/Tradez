@@ -94,3 +94,24 @@ def test_max_concurrent_positions_blocks():
     )
     assert decision.blocked
     assert decision.block_reason == "max_positions"
+
+
+def test_instrument_daily_loss_limit_blocks_only_that_instrument():
+    cfg = _cfg()
+    cfg.max_instrument_daily_loss_pct = 0.015
+    mgr = DynamicRiskManager(cfg)
+
+    losing_instrument = mgr.evaluate(
+        confidence=95, equity=10_000, state=_state(), open_positions_count=0,
+        total_open_risk_pct=0.0, correlation_penalty=1.0, volatility_factor=1.0, spread_factor=1.0,
+        instrument_daily_pnl_pct=-0.02,
+    )
+    assert losing_instrument.blocked
+    assert losing_instrument.block_reason == "instrument_daily_loss_limit"
+
+    other_instrument = mgr.evaluate(
+        confidence=95, equity=10_000, state=_state(), open_positions_count=0,
+        total_open_risk_pct=0.0, correlation_penalty=1.0, volatility_factor=1.0, spread_factor=1.0,
+        instrument_daily_pnl_pct=0.0,
+    )
+    assert not other_instrument.blocked

@@ -57,6 +57,7 @@ class DynamicRiskManager:
         correlation_penalty: float,
         volatility_factor: float,   # 1.0 normal, >1 elevated -> reduce size
         spread_factor: float,       # 1.0 normal, >1 wide -> reduce size
+        instrument_daily_pnl_pct: float = 0.0,
         now: datetime | None = None,
     ) -> RiskDecision:
         now = now or datetime.utcnow()
@@ -87,6 +88,18 @@ class DynamicRiskManager:
         day_pnl_pct = (equity - state.day_start_equity) / state.day_start_equity if state.day_start_equity else 0.0
         if day_pnl_pct <= -self.cfg.max_daily_loss_pct:
             return RiskDecision(0.0, [f"daily loss {day_pnl_pct:.2%} hit limit"], blocked=True, block_reason="daily_loss_limit")
+
+        # Account-wide daily_loss_limit above only trips at -2% overall - one
+        # bad instrument (e.g. -0.44% of equity on XAUUSD alone in a few
+        # hours, observed 2026-08-05) can keep losing all day without ever
+        # tripping it, while every OTHER instrument still trades fine. This
+        # caps exposure per instrument without touching the rest of the bot.
+        if instrument_daily_pnl_pct <= -self.cfg.max_instrument_daily_loss_pct:
+            return RiskDecision(
+                0.0,
+                [f"instrument daily loss {instrument_daily_pnl_pct:.2%} hit limit"],
+                blocked=True, block_reason="instrument_daily_loss_limit",
+            )
 
         week_pnl_pct = (equity - state.week_start_equity) / state.week_start_equity if state.week_start_equity else 0.0
         if week_pnl_pct <= -self.cfg.max_weekly_loss_pct:
