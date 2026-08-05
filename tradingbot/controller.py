@@ -22,7 +22,12 @@ from tradingbot.models import Direction
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
 from tradingbot.notifications import NotificationService
 from tradingbot.optimization import SelfOptimizationModule
-from tradingbot.performance import compute_performance, historical_winrates, per_instrument_pnl_today
+from tradingbot.performance import (
+    compute_performance,
+    daily_pnl_summary,
+    historical_winrates,
+    per_instrument_pnl_today,
+)
 from tradingbot.position_manager import PositionManagementEngine
 from tradingbot.position_sizing import calculate_position_size
 from tradingbot.recovery import RecoveryService
@@ -237,9 +242,15 @@ class AutonomousTradingController:
             self.state.trades_this_hour = 0
             self.state.hour_window_start = now
         day_rolled = now.date() != self._day_date
+        previous_day = self._day_date
         if day_rolled:
             self.state.trades_today = 0
             self._day_date = now.date()
+            summary = daily_pnl_summary(self.db, previous_day)
+            self.notifications.daily_summary(
+                pnl=summary["total_pnl"], win_rate=summary["win_rate"],
+                trades=summary["trades"], profit_factor=summary["profit_factor"],
+            )
         week_rolled = now.isocalendar()[:2] != self._week_key
         if week_rolled:
             self._week_key = now.isocalendar()[:2]

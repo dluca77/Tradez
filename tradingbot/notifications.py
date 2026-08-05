@@ -60,3 +60,15 @@ class NotificationService:
 
     def unexpected_error(self, detail: str) -> None:
         self._dispatch("error", f"Unexpected error: {detail}")
+
+    def daily_summary(self, pnl: float, win_rate: float, trades: int, profit_factor: float) -> None:
+        if trades == 0:
+            self._dispatch("info", "Dagafsluiting: geen trades vandaag")
+            return
+        icon = "✅" if pnl >= 0 else "\U0001F53B"
+        pf_label = "inf" if profit_factor == float("inf") else f"{profit_factor:.2f}"
+        self._dispatch(
+            "info",
+            f"{icon} Dagafsluiting: {pnl:+.2f} EUR over {trades} trades "
+            f"(win rate {win_rate * 100:.0f}%, profit factor {pf_label})",
+        )

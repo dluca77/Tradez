@@ -82,6 +82,30 @@ def per_instrument_pnl_today(db: Database, day_date) -> dict[str, float]:
     return out
 
 
+def daily_pnl_summary(db: Database, day_date) -> dict:
+    day_start = f"{day_date.isoformat()}T00:00:00"
+    day_end = f"{day_date.isoformat()}T23:59:59.999999"
+    rows = [
+        r for r in _real_trades(db.fetch_closed_trades())
+        if r["opened_at"] and day_start <= r["opened_at"] <= day_end
+    ]
+    if not rows:
+        return {"total_pnl": 0.0, "win_rate": 0.0, "trades": 0, "profit_factor": 0.0}
+
+    wins = [r for r in rows if (r["pnl"] or 0) > 0]
+    losses = [r for r in rows if (r["pnl"] or 0) < 0]
+    gross_win = sum((r["pnl"] or 0) for r in wins)
+    gross_loss = abs(sum((r["pnl"] or 0) for r in losses))
+    pf = gross_win / gross_loss if gross_loss > 0 else float("inf") if gross_win > 0 else 0.0
+
+    return {
+        "total_pnl": sum((r["pnl"] or 0) for r in rows),
+        "win_rate": len(wins) / len(rows),
+        "trades": len(rows),
+        "profit_factor": pf,
+    }
+
+
 def historical_winrates(db: Database) -> dict[str, float]:
     rows = _real_trades(db.fetch_closed_trades())
     buckets: dict[str, list] = {}
