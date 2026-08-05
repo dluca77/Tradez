@@ -7,6 +7,8 @@ bot fully online after installation.
 from __future__ import annotations
 
 import asyncio
+import msvcrt
+import sys
 
 import uvicorn
 
@@ -15,6 +17,22 @@ from tradingbot.config import load_config
 from tradingbot.controller import AutonomousTradingController
 from tradingbot.dashboard.app import create_app
 from tradingbot.logging_config import configure_logging
+
+# Single-instance guard. A manual restart racing the watchdog's periodic
+# check (or two watchdog fires overlapping) could otherwise start a second
+# live controller before the first one's dashboard-port bind failure
+# actually killed it - observed 2026-08-05: two full controllers ran
+# concurrently for ~7 seconds before the second crashed on the port
+# conflict. An OS file lock is acquired synchronously, before any asyncio
+# task (including the controller) is even created, and is released
+# automatically on process exit for any reason (crash, kill, normal
+# shutdown) - no stale-lock cleanup needed, unlike a plain file-exists check.
+_lock_file = open("run_paper.lock", "w")
+try:
+    msvcrt.locking(_lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+except OSError:
+    print("Another instance of run_paper.py is already running - refusing to start a second one.")
+    sys.exit(1)
 
 
 async def main() -> None:
