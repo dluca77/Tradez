@@ -29,3 +29,21 @@ def test_uncorrelated_direction_no_penalty():
 def test_no_open_positions_no_penalty():
     penalty = correlation_penalty([], Direction.LONG, "EURUSD")
     assert penalty == 1.0
+
+
+def test_same_direction_indices_reduce_score():
+    open_positions = [_position("NAS100", Direction.SHORT)]
+    penalty = correlation_penalty(open_positions, Direction.SHORT, "SPX500")
+    assert penalty < 1.0
+
+
+def test_opposite_direction_indices_no_penalty():
+    open_positions = [_position("NAS100", Direction.LONG)]
+    penalty = correlation_penalty(open_positions, Direction.SHORT, "SPX500")
+    assert penalty == 1.0
+
+
+def test_index_vs_non_index_no_penalty():
+    open_positions = [_position("NAS100", Direction.SHORT)]
+    penalty = correlation_penalty(open_positions, Direction.SHORT, "USDJPY")
+    assert penalty == 1.0

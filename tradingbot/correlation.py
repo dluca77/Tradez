@@ -14,6 +14,17 @@ USD_EXPOSURE_WHEN_LONG = {
     "NAS100": 0, "SPX500": 0, "GER40": 0,
 }
 
+# The USD-exposure model above gives every equity index 0 exposure, so it
+# never penalizes them against EACH OTHER - but major indices move together
+# on global risk-on/risk-off sentiment regardless of currency. Observed
+# 2026-08-05: simultaneous same-direction UK100+JPN225 shorts both lost
+# together, combining to a single loss (-1103.87) far bigger than either
+# position's own risk budget, with no size reduction applied because this
+# group didn't exist. A separate, additive correlation channel - same
+# 0.25-per-position penalty curve as the USD model, taking the more
+# restrictive of the two rather than compounding them.
+EQUITY_INDEX_GROUP = {"NAS100", "SPX500", "UK100", "JPN225", "GER40"}
+
 
 def usd_exposure(direction: Direction, instrument: str) -> float:
     base = USD_EXPOSURE_WHEN_LONG.get(instrument, 0)
@@ -28,8 +39,7 @@ def combined_usd_exposure(open_positions: list[Position], candidate_direction: D
     return total
 
 
-def correlation_penalty(open_positions: list[Position], candidate_direction: Direction, candidate_instrument: str) -> float:
-    """Returns a 0..1 penalty factor; 1 = fully independent, 0 = fully redundant."""
+def _usd_correlation_penalty(open_positions: list[Position], candidate_direction: Direction, candidate_instrument: str) -> float:
     exposures = [usd_exposure(p.direction, p.instrument) for p in open_positions]
     candidate_exp = usd_exposure(candidate_direction, candidate_instrument)
     if candidate_exp == 0 or not exposures:
@@ -38,3 +48,30 @@ def correlation_penalty(open_positions: list[Position], candidate_direction: Dir
     if same_direction_count == 0:
         return 1.0
     return max(0.2, 1.0 - 0.25 * same_direction_count)
+
+
+def _index_correlation_penalty(open_positions: list[Position], candidate_direction: Direction, candidate_instrument: str) -> float:
+    if candidate_instrument not in EQUITY_INDEX_GROUP:
+        return 1.0
+    same_direction_count = sum(
+        1 for p in open_positions
+        if p.instrument in EQUITY_INDEX_GROUP
+        and p.instrument != candidate_instrument
+        and p.direction == candidate_direction
+    )
+    if same_direction_count == 0:
+        return 1.0
+    return max(0.2, 1.0 - 0.25 * same_direction_count)
+
+
+def correlation_penalty(open_positions: list[Position], candidate_direction: Direction, candidate_instrument: str) -> float:
+    """Returns a 0..1 penalty factor; 1 = fully independent, 0 = fully redundant.
+
+    Two independent correlation channels (USD exposure, equity-index
+    co-movement) can each flag the same candidate - taking the more
+    restrictive (lower) of the two avoids compounding them into an
+    unrealistically small size when only one channel actually applies.
+    """
+    usd_penalty = _usd_correlation_penalty(open_positions, candidate_direction, candidate_instrument)
+    index_penalty = _index_correlation_penalty(open_positions, candidate_direction, candidate_instrument)
+    return min(usd_penalty, index_penalty)
