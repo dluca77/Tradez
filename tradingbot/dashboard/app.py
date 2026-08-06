@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 
 from tradingbot.controller import AutonomousTradingController
 from tradingbot.models import Direction
-from tradingbot.performance import compute_performance
+from tradingbot.performance import compute_performance, equity_curve
 
 # All timestamps are stored in the database as naive UTC (datetime.utcnow()).
 # Displaying them as-is silently showed UTC as if it were local time, running
@@ -120,6 +120,16 @@ TEMPLATE = """<!doctype html>
     background: #1d3a2a; color: #3ddc84; padding: 10px 18px; border-radius: 10px;
     font-size: .85rem; display: none;
   }}
+  #equity-wrap {{ position: relative; width: 100%; height: 220px; }}
+  #equity-wrap svg {{ width: 100%; height: 100%; display: block; overflow: visible; }}
+  .eq-tooltip {{
+    position: absolute; pointer-events: none; display: none;
+    background: #1c2330; border: 1px solid #2a3040; border-radius: 8px;
+    padding: 6px 10px; font-size: .78rem; white-space: nowrap; transform: translate(-50%, -110%);
+  }}
+  .eq-tooltip .v {{ font-weight: 700; font-size: .88rem; }}
+  .eq-tooltip .t {{ color: #7d8896; margin-top: 2px; }}
+  .eq-empty {{ color: #5a6472; font-size: .85rem; padding: 30px 4px; text-align: center; }}
 </style></head>
 <body>
 
@@ -175,6 +185,13 @@ TEMPLATE = """<!doctype html>
       <div class="label">Profit factor</div>
       <div class="value">{profit_factor:.2f}</div>
       <div class="sub">Doel: &gt; 1.00</div>
+    </div>
+  </div>
+  <div class="chart-card" style="margin-top: 10px;">
+    <div class="chart-title">Equity-curve (cumulatieve winst/verlies, gesloten trades)</div>
+    <div id="equity-wrap">
+      <div class="eq-empty" id="equity-empty" style="display:none;">Nog geen gesloten trades.</div>
+      <div class="eq-tooltip" id="equity-tooltip"></div>
     </div>
   </div>
 </section>
@@ -293,6 +310,143 @@ async function loadChart(instrument, entry, direction, canvasId) {{
     if (canvas) drawCandles(canvas, candles, entry, direction);
   }} catch (e) {{ /* ignore, chart just stays blank */ }}
 }}
+
+function fmtEuro(v) {{
+  const sign = v >= 0 ? '+' : '-';
+  return sign + '€' + Math.abs(v).toLocaleString('nl-NL', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
+}}
+
+function fmtEqDate(iso) {{
+  const d = new Date(iso + 'Z');
+  return d.toLocaleString('nl-NL', {{day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}});
+}}
+
+function svgEl(tag, attrs) {{
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}}
+
+function drawEquityCurve(points) {{
+  const wrap = document.getElementById('equity-wrap');
+  const tooltip = document.getElementById('equity-tooltip');
+  if (!points || points.length < 2) {{
+    document.getElementById('equity-empty').style.display = 'block';
+    return;
+  }}
+
+  const width = wrap.clientWidth || 600;
+  const height = 220;
+  const padL = 8, padR = 60, padT = 20, padB = 8;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+
+  const values = points.map(p => p.cum_pnl);
+  let lo = Math.min(0, ...values);
+  let hi = Math.max(0, ...values);
+  const pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.1 || 1;
+  lo -= pad; hi += pad;
+
+  const x = i => padL + (i / (points.length - 1)) * plotW;
+  const y = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
+  const zeroY = y(0);
+
+  const svg = svgEl('svg', {{viewBox: `0 0 ${{width}} ${{height}}`, preserveAspectRatio: 'none'}});
+
+  const clipAbove = svgEl('clipPath', {{id: 'eq-clip-above'}});
+  clipAbove.appendChild(svgEl('rect', {{x: 0, y: 0, width, height: Math.max(0, zeroY)}}));
+  const clipBelow = svgEl('clipPath', {{id: 'eq-clip-below'}});
+  clipBelow.appendChild(svgEl('rect', {{x: 0, y: Math.max(0, zeroY), width, height: Math.max(0, height - zeroY)}}));
+  const defs = svgEl('defs', {{}});
+  defs.appendChild(clipAbove); defs.appendChild(clipBelow);
+  svg.appendChild(defs);
+
+  // zero baseline - hairline, solid, recessive
+  svg.appendChild(svgEl('line', {{
+    x1: padL, y1: zeroY, x2: width - padR, y2: zeroY,
+    stroke: '#232a38', 'stroke-width': 1,
+  }}));
+
+  let lineD = '';
+  points.forEach((p, i) => {{ lineD += (i === 0 ? 'M' : 'L') + x(i) + ',' + y(p.cum_pnl) + ' '; }});
+  const areaD = lineD + `L ${{x(points.length - 1)}},${{zeroY}} L ${{x(0)}},${{zeroY}} Z`;
+
+  const areaAbove = svgEl('path', {{d: areaD, fill: '#3ddc84', opacity: 0.10, 'clip-path': 'url(#eq-clip-above)'}});
+  const areaBelow = svgEl('path', {{d: areaD, fill: '#ff6b6b', opacity: 0.10, 'clip-path': 'url(#eq-clip-below)'}});
+  svg.appendChild(areaAbove); svg.appendChild(areaBelow);
+
+  svg.appendChild(svgEl('path', {{d: lineD.trim(), fill: 'none', stroke: '#6fb3ff', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}}));
+
+  // y-axis reference labels: min, zero, max
+  [lo + pad, 0, hi - pad].forEach(v => {{
+    const ty = Math.min(height - padB - 2, Math.max(padT + 8, y(v)));
+    const label = svgEl('text', {{x: width - padR + 8, y: ty, fill: '#7d8896', 'font-size': 10}});
+    label.textContent = fmtEuro(v);
+    svg.appendChild(label);
+  }});
+
+  // end marker + label (value at the end, per line-chart convention)
+  const lastI = points.length - 1;
+  const lastV = points[lastI].cum_pnl;
+  const endX = x(lastI), endY = y(lastV);
+  const ring = svgEl('circle', {{cx: endX, cy: endY, r: 5, fill: '#0b0e14'}});
+  const dot = svgEl('circle', {{cx: endX, cy: endY, r: 4, fill: lastV >= 0 ? '#3ddc84' : '#ff6b6b'}});
+  svg.appendChild(ring); svg.appendChild(dot);
+  const endLabel = svgEl('text', {{
+    x: Math.min(endX, width - padR - 4), y: padT - 6, fill: lastV >= 0 ? '#3ddc84' : '#ff6b6b',
+    'font-size': 12, 'font-weight': 700, 'text-anchor': 'end',
+  }});
+  endLabel.textContent = fmtEuro(lastV);
+  svg.appendChild(endLabel);
+
+  // crosshair (hidden until hover)
+  const crosshair = svgEl('line', {{
+    x1: 0, y1: padT, x2: 0, y2: height - padB, stroke: '#7d8896', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none',
+  }});
+  svg.appendChild(crosshair);
+
+  const hitRect = svgEl('rect', {{x: padL, y: 0, width: plotW, height, fill: 'transparent'}});
+  svg.appendChild(hitRect);
+
+  function onMove(evt) {{
+    const rect = svg.getBoundingClientRect();
+    const scaleX = width / rect.width;
+    const px = (evt.clientX - rect.left) * scaleX;
+    let idx = Math.round(((px - padL) / plotW) * (points.length - 1));
+    idx = Math.max(0, Math.min(points.length - 1, idx));
+    const px2 = x(idx);
+    crosshair.setAttribute('x1', px2); crosshair.setAttribute('x2', px2);
+    crosshair.setAttribute('opacity', 1);
+    const scaleXBack = rect.width / width;
+    tooltip.style.left = (px2 * scaleXBack) + 'px';
+    tooltip.style.top = y(points[idx].cum_pnl) * (rect.height / height) + 'px';
+    tooltip.style.display = 'block';
+    const valSpan = points[idx].cum_pnl >= 0 ? 'pos' : 'neg';
+    tooltip.innerHTML = '';
+    const vEl = document.createElement('div'); vEl.className = 'v ' + valSpan;
+    vEl.textContent = fmtEuro(points[idx].cum_pnl);
+    const tEl = document.createElement('div'); tEl.className = 't';
+    tEl.textContent = fmtEqDate(points[idx].t);
+    tooltip.appendChild(vEl); tooltip.appendChild(tEl);
+  }}
+  function onLeave() {{
+    crosshair.setAttribute('opacity', 0);
+    tooltip.style.display = 'none';
+  }}
+  hitRect.addEventListener('pointermove', onMove);
+  hitRect.addEventListener('pointerleave', onLeave);
+
+  wrap.insertBefore(svg, tooltip);
+}}
+
+async function loadEquityCurve() {{
+  try {{
+    const res = await fetch('/api/equity_curve');
+    const points = await res.json();
+    drawEquityCurve(points);
+  }} catch (e) {{ /* ignore, section just stays empty */ }}
+}}
+loadEquityCurve();
 
 const openPositionsForCharts = {positions_json};
 
@@ -807,6 +961,10 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             "by_instrument": perf.by_instrument,
             "by_strategy": perf.by_strategy,
         }
+
+    @app.get("/api/equity_curve")
+    async def equity_curve_api():
+        return equity_curve(controller.db)
 
     @app.get("/api/candles/{instrument}")
     async def candles(instrument: str, timeframe: str = "M5", count: int = 60):

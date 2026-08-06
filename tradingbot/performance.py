@@ -82,6 +82,20 @@ def per_instrument_pnl_today(db: Database, day_date) -> dict[str, float]:
     return out
 
 
+def equity_curve(db: Database) -> list[dict]:
+    """Cumulative realized pnl over time, one point per closed trade in
+    chronological order - the dashboard's equity-curve chart. Realized only
+    (closed_at), same convention as per_instrument_pnl_today/daily_pnl_summary,
+    not a live equity snapshot series (which the bot doesn't persist)."""
+    rows = sorted(_real_trades(db.fetch_closed_trades()), key=lambda r: r["closed_at"] or "")
+    cum = 0.0
+    points = []
+    for r in rows:
+        cum += r["pnl"] or 0.0
+        points.append({"t": r["closed_at"], "cum_pnl": round(cum, 2)})
+    return points
+
+
 def daily_pnl_summary(db: Database, day_date) -> dict:
     day_start = f"{day_date.isoformat()}T00:00:00"
     day_end = f"{day_date.isoformat()}T23:59:59.999999"
