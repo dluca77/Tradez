@@ -130,6 +130,17 @@ TEMPLATE = """<!doctype html>
   .eq-tooltip .v {{ font-weight: 700; font-size: .88rem; }}
   .eq-tooltip .t {{ color: #7d8896; margin-top: 2px; }}
   .eq-empty {{ color: #5a6472; font-size: .85rem; padding: 30px 4px; text-align: center; }}
+  .bar-row {{ display: flex; align-items: center; gap: 10px; padding: 7px 0; }}
+  .bar-label {{ flex: 0 0 74px; font-size: .78rem; color: #9aa4b2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .bar-track {{ flex: 1 1 auto; height: 18px; background: #10141c; border-radius: 4px; overflow: hidden; min-width: 0; }}
+  .bar-fill {{ height: 100%; border-radius: 0 4px 4px 0; }}
+  .bar-fill.pos {{ background: #3ddc84; }}
+  .bar-fill.neg {{ background: #ff6b6b; }}
+  .bar-figures {{ flex: 0 0 auto; text-align: right; min-width: 92px; }}
+  .bar-value {{ font-size: .82rem; font-weight: 700; }}
+  .bar-sub {{ font-size: .68rem; color: #7d8896; }}
+  .bar-section-title {{ font-size: .78rem; color: #9aa4b2; margin: 14px 0 4px; }}
+  .bar-section-title:first-child {{ margin-top: 0; }}
 </style></head>
 <body>
 
@@ -193,6 +204,12 @@ TEMPLATE = """<!doctype html>
       <div class="eq-empty" id="equity-empty" style="display:none;">Nog geen gesloten trades.</div>
       <div class="eq-tooltip" id="equity-tooltip"></div>
     </div>
+  </div>
+  <div class="chart-card" style="margin-top: 10px;">
+    <div class="bar-section-title">Winst per instrument</div>
+    {instrument_bars}
+    <div class="bar-section-title">Winst per strategie</div>
+    {strategy_bars}
   </div>
 </section>
 
@@ -460,23 +477,45 @@ loadEquityCurve();
 
 const openPositionsForCharts = {positions_json};
 
+// The whole page reloads every 10s (<meta refresh>), which used to reset
+// every chart-toggle back to hidden - annoying since you'd have to
+// re-click "Toon grafiek" after every refresh to keep watching a
+// position. Persist which INSTRUMENTS (not canvas_ids, which include an
+// index that shifts as positions open/close) have their chart open
+// across reloads via sessionStorage, and restore them on load.
+function getOpenChartInstruments() {{
+  try {{ return new Set(JSON.parse(sessionStorage.getItem('openChartInstruments') || '[]')); }}
+  catch (e) {{ return new Set(); }}
+}}
+function saveOpenChartInstruments(set) {{
+  sessionStorage.setItem('openChartInstruments', JSON.stringify([...set]));
+}}
+
 function toggleChart(canvasId) {{
   const wrap = document.getElementById('wrap-' + canvasId);
   const btn = document.getElementById('btn-' + canvasId);
   const isHidden = wrap.style.display === 'none' || wrap.style.display === '';
+  const p = openPositionsForCharts.find(p => p.canvas_id === canvasId);
+  const openSet = getOpenChartInstruments();
   if (isHidden) {{
     wrap.style.display = 'block';
     btn.textContent = 'Verberg grafiek';
     if (!wrap.dataset.loaded) {{
-      const p = openPositionsForCharts.find(p => p.canvas_id === canvasId);
       if (p) loadChart(p.instrument, p.entry, p.direction, canvasId);
       wrap.dataset.loaded = '1';
     }}
+    if (p) openSet.add(p.instrument);
   }} else {{
     wrap.style.display = 'none';
     btn.textContent = 'Toon grafiek';
+    if (p) openSet.delete(p.instrument);
   }}
+  saveOpenChartInstruments(openSet);
 }}
+
+openPositionsForCharts.forEach(p => {{
+  if (getOpenChartInstruments().has(p.instrument)) toggleChart(p.canvas_id);
+}});
 </script>
 </body></html>"""
 
@@ -662,6 +701,15 @@ CHART_CARD = """<div class="chart-card">
   </div>
 </div>"""
 
+BAR_ROW = """<div class="bar-row">
+  <div class="bar-label">{name}</div>
+  <div class="bar-track"><div class="bar-fill {pnl_class}" style="width: {pct:.1f}%;"></div></div>
+  <div class="bar-figures">
+    <div class="bar-value {pnl_class}">{pnl_sign}&euro;{pnl_abs:,.2f}</div>
+    <div class="bar-sub">{trades} trades &middot; {win_rate:.0f}% win rate</div>
+  </div>
+</div>"""
+
 
 def _fmt_dt(value: str | None) -> str:
     if not value:
@@ -687,6 +735,27 @@ def _next_step_text(r_multiple: float, breakeven_moved: bool, trailing_active: b
     if r_multiple < 2.0:
         return "Nog eens 30% wordt verkocht bij 2R winst"
     return "Restant volgt een meebewegende (trailing) stop-loss"
+
+
+def _bar_rows(stats: dict[str, dict], limit: int = 8) -> str:
+    # Bars grow from a single baseline (the left edge), length = magnitude
+    # relative to the biggest bar in this set, color = sign - a diverging
+    # bar chart without needing an actual zero-centered axis, which would
+    # need much more layout work for the same information.
+    if not stats:
+        return '<div class="empty">Nog geen data.</div>'
+    items = sorted(stats.items(), key=lambda kv: kv[1]["total_pnl"], reverse=True)[:limit]
+    max_abs = max((abs(v["total_pnl"]) for _, v in items), default=0.0) or 1.0
+    rows = []
+    for name, v in items:
+        pnl = v["total_pnl"]
+        rows.append(BAR_ROW.format(
+            name=name, pnl_class="pos" if pnl >= 0 else "neg",
+            pct=max(2.0, abs(pnl) / max_abs * 100),
+            pnl_sign="+" if pnl >= 0 else "-", pnl_abs=abs(pnl),
+            trades=v["trades"], win_rate=v["win_rate"] * 100,
+        ))
+    return "".join(rows)
 
 
 def create_app(controller: AutonomousTradingController) -> FastAPI:
@@ -813,6 +882,8 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             charts_html=charts_html,
             recent_trades_table=recent_trades_table,
             positions_json=json.dumps(positions_for_js),
+            instrument_bars=_bar_rows(perf.by_instrument),
+            strategy_bars=_bar_rows(perf.by_strategy),
         )
 
     @app.get("/geschiedenis", response_class=HTMLResponse)
