@@ -117,6 +117,14 @@ class AutonomousTradingController:
         self.paused = False
         self._day_date = datetime.utcnow().date()
         self._week_key = datetime.utcnow().isocalendar()[:2]
+        # A blocked reason (daily_loss_limit etc.) used to re-notify Discord
+        # on every single blocked candidate - with several candidates
+        # scanned every ~15s, that was multiple pings per minute for
+        # potentially hours (observed 2026-08-06: 5 messages within 2
+        # seconds). Track which reasons have already been announced and
+        # only notify once per reason per "episode" - cleared on day
+        # rollover, since these are all daily/weekly checks.
+        self._notified_risk_limits: set[str] = set()
 
     async def startup(self) -> None:
         await self.recovery.recover()
@@ -254,6 +262,9 @@ class AutonomousTradingController:
         week_rolled = now.isocalendar()[:2] != self._week_key
         if week_rolled:
             self._week_key = now.isocalendar()[:2]
+
+        if day_rolled or week_rolled:
+            self._notified_risk_limits.clear()
 
         # 1-2: broker + account
         connected = await self.broker.is_connected()
@@ -610,7 +621,11 @@ class AutonomousTradingController:
                 block_reason=decision.block_reason,
                 reasons=decision.reasons,
             )
-            if decision.block_reason in ("max_drawdown", "daily_loss_limit", "weekly_loss_limit"):
+            if (
+                decision.block_reason in ("max_drawdown", "daily_loss_limit", "weekly_loss_limit")
+                and decision.block_reason not in self._notified_risk_limits
+            ):
+                self._notified_risk_limits.add(decision.block_reason)
                 self.notifications.risk_limit_hit(decision.block_reason)
             return False
 
