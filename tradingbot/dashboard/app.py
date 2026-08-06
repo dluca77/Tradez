@@ -377,9 +377,19 @@ function drawEquityCurve(points) {{
 
   svg.appendChild(svgEl('path', {{d: lineD.trim(), fill: 'none', stroke: '#6fb3ff', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}}));
 
-  // y-axis reference labels: min, zero, max
-  [lo + pad, 0, hi - pad].forEach(v => {{
-    const ty = Math.min(height - padB - 2, Math.max(padT + 8, y(v)));
+  // y-axis reference labels: max and min always shown; zero only if it
+  // doesn't collide with either (e.g. when the min is close to zero
+  // relative to a much larger max, their labels would otherwise overlap -
+  // the zero gridline itself still communicates "zero" either way).
+  const minLabelGap = 14;
+  const maxY = Math.min(height - padB - 2, Math.max(padT + 8, y(hi - pad)));
+  const minY = Math.min(height - padB - 2, Math.max(padT + 8, y(lo + pad)));
+  const labelPositions = [[hi - pad, maxY], [lo + pad, minY]];
+  const zeroY2 = Math.min(height - padB - 2, Math.max(padT + 8, y(0)));
+  if (Math.abs(zeroY2 - maxY) >= minLabelGap && Math.abs(zeroY2 - minY) >= minLabelGap) {{
+    labelPositions.push([0, zeroY2]);
+  }}
+  labelPositions.forEach(([v, ty]) => {{
     const label = svgEl('text', {{x: width - padR + 8, y: ty, fill: '#7d8896', 'font-size': 10}});
     label.textContent = fmtEuro(v);
     svg.appendChild(label);
