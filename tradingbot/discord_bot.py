@@ -32,14 +32,12 @@ _CHANNEL_PLAN = {
 _WEBHOOK_NAME = "Tradez"
 
 
-async def _ensure_channels_and_webhooks(guild) -> dict[str, str]:
+async def _ensure_channels_and_webhooks(guild, avatar_bytes: bytes | None) -> dict[str, str]:
     import discord
 
     urls: dict[str, str] = load_category_webhooks()
     changed = False
     for category, channel_name in _CHANNEL_PLAN.items():
-        if urls.get(category):
-            continue  # already provisioned in a previous run - idempotent
         channel = discord.utils.get(guild.text_channels, name=channel_name)
         if channel is None:
             try:
@@ -55,9 +53,18 @@ async def _ensure_channels_and_webhooks(guild) -> dict[str, str]:
             existing = await channel.webhooks()
             webhook = next((w for w in existing if w.name == _WEBHOOK_NAME), None)
             if webhook is None:
-                webhook = await channel.create_webhook(name=_WEBHOOK_NAME)
-            urls[category] = webhook.url
-            changed = True
+                webhook = await channel.create_webhook(name=_WEBHOOK_NAME, avatar=avatar_bytes)
+                log.info("discord_bot.webhook_created", channel=channel_name)
+            elif avatar_bytes and webhook.avatar is None:
+                # Reads as the same sender as the bot in Discord's UI -
+                # otherwise a webhook message shows a blank/default avatar
+                # next to the bot's own, looking like two different things
+                # even though both come from this one integration.
+                webhook = await webhook.edit(avatar=avatar_bytes)
+                log.info("discord_bot.webhook_avatar_set", channel=channel_name)
+            if urls.get(category) != webhook.url:
+                urls[category] = webhook.url
+                changed = True
         except discord.Forbidden:
             log.warning(
                 "discord_bot.missing_permission",
@@ -197,9 +204,14 @@ async def _run(controller: AutonomousTradingController) -> None:
             await tree.sync(guild=guild)
 
         if client.guilds:
+            avatar_bytes = None
+            try:
+                avatar_bytes = await client.user.display_avatar.read()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("discord_bot.avatar_fetch_failed", detail=str(exc))
             # Single-owner bot in one server - the first (only) guild is
             # where the dedicated channels/webhooks live.
-            urls = await _ensure_channels_and_webhooks(client.guilds[0])
+            urls = await _ensure_channels_and_webhooks(client.guilds[0], avatar_bytes)
             if urls:
                 controller.notifications.set_category_webhooks(urls)
                 log.info("discord_bot.category_webhooks_ready", categories=list(urls.keys()))
