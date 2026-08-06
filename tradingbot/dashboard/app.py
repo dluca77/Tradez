@@ -28,11 +28,24 @@ TEMPLATE = """<!doctype html>
   * {{ box-sizing: border-box; }}
   body {{
     font-family: -apple-system, system-ui, sans-serif;
-    background: #0b0e14; color: #e8ebf0; margin: 0;
+    background: radial-gradient(ellipse 900px 500px at 50% -10%, #131a2a 0%, #0b0e14 55%) #0b0e14;
+    background-attachment: fixed;
+    color: #e8ebf0; margin: 0;
     padding: 16px 16px 48px; max-width: 720px; margin-inline: auto;
   }}
-  h1 {{ font-size: 1.15rem; font-weight: 600; margin: 4px 0 2px; }}
+  h1 {{ font-size: 1.15rem; font-weight: 600; margin: 4px 0 2px; display: flex; align-items: center; gap: 4px; }}
   .subtitle {{ color: #7d8896; font-size: .85rem; margin-bottom: 18px; }}
+  .live-dot {{
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: #3ddc84; margin-left: 4px; flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(61, 220, 132, .6);
+    animation: livePulse 2s ease-out infinite;
+  }}
+  @keyframes livePulse {{
+    0% {{ box-shadow: 0 0 0 0 rgba(61, 220, 132, .55); }}
+    70% {{ box-shadow: 0 0 0 7px rgba(61, 220, 132, 0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(61, 220, 132, 0); }}
+  }}
   .pill {{
     display: inline-block; padding: 3px 10px; border-radius: 999px;
     font-size: .75rem; font-weight: 600; margin-left: 6px;
@@ -50,6 +63,33 @@ TEMPLATE = """<!doctype html>
   .card {{
     background: #151a24; border: 1px solid #232a38; border-radius: 14px;
     padding: 14px; min-width: 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.2);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }}
+  .card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.28); border-color: #2a3040; }}
+  /* Entrance animation: every section fades/slides in on load, staggered
+     by DOM order via nth-of-type. Replays on each 10s auto-refresh - by
+     design, since a full-page <meta refresh> means there's no persistent
+     DOM to animate FROM a previous value TO a new one; a brief, gentle
+     restatement on each refresh reads as "this just updated" rather than
+     a jarring reload. Short duration + reduced-motion opt-out keep it
+     from feeling gimmicky. */
+  @keyframes fadeSlideIn {{
+    from {{ opacity: 0; transform: translateY(6px); }}
+    to {{ opacity: 1; transform: translateY(0); }}
+  }}
+  section {{ animation: fadeSlideIn .5s ease both; }}
+  section:nth-of-type(1) {{ animation-delay: .02s; }}
+  section:nth-of-type(2) {{ animation-delay: .07s; }}
+  section:nth-of-type(3) {{ animation-delay: .12s; }}
+  section:nth-of-type(4) {{ animation-delay: .17s; }}
+  section:nth-of-type(5) {{ animation-delay: .22s; }}
+  section:nth-of-type(6) {{ animation-delay: .27s; }}
+  section:nth-of-type(n+7) {{ animation-delay: .3s; }}
+  .hero {{ animation: fadeSlideIn .5s ease both; }}
+  @media (prefers-reduced-motion: reduce) {{
+    section, .hero, .live-dot {{ animation: none !important; }}
+    .card {{ transition: none !important; }}
   }}
   .card .label {{ color: #7d8896; font-size: .75rem; margin-bottom: 4px; }}
   .card .value {{ font-size: 1.5rem; font-weight: 700; line-height: 1.15; overflow-wrap: break-word; word-break: break-word; }}
@@ -151,6 +191,8 @@ TEMPLATE = """<!doctype html>
   .hero {{ margin: 4px 0 16px; }}
   .hero-label {{ font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #7d8896; font-weight: 600; }}
   .hero-value {{ font-size: 2.6rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }}
+  .hero-value.pos {{ text-shadow: 0 0 28px rgba(61, 220, 132, .25); }}
+  .hero-value.neg {{ text-shadow: 0 0 28px rgba(255, 107, 107, .25); }}
   .hero-delta {{ font-size: .95rem; font-weight: 600; margin-top: 2px; }}
   @media (max-width: 380px) {{ .hero-value {{ font-size: 2.1rem; }} }}
   .sparkline {{ width: 100%; height: 28px; display: block; margin-top: 6px; }}
@@ -160,12 +202,13 @@ TEMPLATE = """<!doctype html>
 <h1>Autonomous Trading Bot
   <span class="pill pill-paper">{mode_label}</span>
   <span class="pill {kill_pill_class}">{kill_label}</span>
+  <span class="live-dot" title="Live"></span>
 </h1>
 <div class="subtitle">Laatst bijgewerkt: automatisch elke 10 sec &middot; ververs handmatig voor de nieuwste stand</div>
 
 <div class="hero">
   <div class="hero-label">Equity</div>
-  <div class="hero-value {equity_class}">&euro;{equity:,.2f}</div>
+  <div class="hero-value {equity_class}" data-countup="{equity:.2f}" data-format="euro">&euro;{equity:,.2f}</div>
   <div class="hero-delta {pnl_class}">{pnl_sign}&euro;{total_pnl_abs:,.2f} totaal ({pnl_sign}{total_pnl_pct:.1f}%)</div>
 </div>
 {risk_gate_banner}
@@ -209,7 +252,7 @@ TEMPLATE = """<!doctype html>
     </div>
     <div class="card">
       <div class="label">Totale winst/verlies</div>
-      <div class="value {pnl_class}">{pnl_sign}&euro;{total_pnl_abs:,.2f}</div>
+      <div class="value {pnl_class}">{pnl_sign}<span data-countup="{total_pnl_abs:.2f}" data-format="euro-abs">&euro;{total_pnl_abs:,.2f}</span></div>
       <div class="sub {pnl_class}">{pnl_sign}{total_pnl_pct:.3f}% van startkapitaal</div>
       <svg class="sparkline" id="pnl-sparkline"></svg>
     </div>
@@ -283,6 +326,37 @@ TEMPLATE = """<!doctype html>
 
 <div id="toast"></div>
 <script>
+const _countupFormatters = {{
+  euro: v => '€' + v.toLocaleString('nl-NL', {{minimumFractionDigits: 2, maximumFractionDigits: 2}}),
+  'euro-abs': v => '€' + Math.abs(v).toLocaleString('nl-NL', {{minimumFractionDigits: 2, maximumFractionDigits: 2}}),
+}};
+
+// Numbers count up from 0 to their server-rendered value on each load - a
+// full <meta refresh> reload has no previous DOM state to animate FROM, so
+// this is a fixed 0->value run each time rather than a true old->new
+// transition, but it still gives the "the page just came alive" feel the
+// static text alone didn't have. Skipped entirely under
+// prefers-reduced-motion.
+function animateCountUps() {{
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('[data-countup]').forEach(el => {{
+    const target = parseFloat(el.dataset.countup);
+    const fmt = _countupFormatters[el.dataset.format] || (v => v.toFixed(2));
+    if (!isFinite(target)) return;
+    const duration = 700;
+    const start = performance.now();
+    function tick(now) {{
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      el.textContent = fmt(target * eased);
+      if (t < 1) requestAnimationFrame(tick);
+      else el.textContent = fmt(target);
+    }}
+    requestAnimationFrame(tick);
+  }});
+}}
+animateCountUps();
+
 async function callControl(path) {{
   const res = await fetch(path, {{ method: 'POST' }});
   const toast = document.getElementById('toast');
@@ -413,7 +487,18 @@ function drawEquityCurve(points) {{
   const areaBelow = svgEl('path', {{d: areaD, fill: '#ff6b6b', opacity: 0.10, 'clip-path': 'url(#eq-clip-below)'}});
   svg.appendChild(areaAbove); svg.appendChild(areaBelow);
 
-  svg.appendChild(svgEl('path', {{d: lineD.trim(), fill: 'none', stroke: '#6fb3ff', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}}));
+  const linePath = svgEl('path', {{d: lineD.trim(), fill: 'none', stroke: '#6fb3ff', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}});
+  svg.appendChild(linePath);
+  // Draws itself in left-to-right on load via a dash-offset sweep, instead
+  // of just appearing - skipped under prefers-reduced-motion.
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduceMotion) {{
+    const len = linePath.getTotalLength();
+    linePath.style.strokeDasharray = len;
+    linePath.style.strokeDashoffset = len;
+    linePath.style.transition = 'stroke-dashoffset 900ms ease-out';
+    requestAnimationFrame(() => requestAnimationFrame(() => {{ linePath.style.strokeDashoffset = '0'; }}));
+  }}
 
   // y-axis reference labels: max and min always shown; zero only if it
   // doesn't collide with either (e.g. when the min is close to zero
