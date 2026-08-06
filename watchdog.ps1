@@ -32,11 +32,26 @@ if ($running) {
 Write-WatchdogLog "run_paper.py not found running - starting it"
 
 $webhookUrl = $null
-$envPath = Join-Path $repoPath ".env"
-if (Test-Path $envPath) {
-    $webhookLine = Get-Content $envPath | Where-Object { $_ -match '^NOTIFY_WEBHOOK_URL=' }
-    if ($webhookLine) {
-        $webhookUrl = ($webhookLine -replace '^NOTIFY_WEBHOOK_URL=', '').Trim()
+# Prefer the "risico" channel's dedicated webhook (set up by the Discord
+# bot on first connect) so a crash-restart alert lands next to the other
+# risk notifications instead of the old catch-all channel; falls back to
+# NOTIFY_WEBHOOK_URL if the bot hasn't provisioned it yet (or at all).
+$webhooksJsonPath = Join-Path $repoPath "data\discord_webhooks.json"
+if (Test-Path $webhooksJsonPath) {
+    try {
+        $webhooks = Get-Content $webhooksJsonPath -Raw | ConvertFrom-Json
+        if ($webhooks.risico) { $webhookUrl = $webhooks.risico }
+    } catch {
+        Write-WatchdogLog "Could not parse discord_webhooks.json: $_"
+    }
+}
+if (-not $webhookUrl) {
+    $envPath = Join-Path $repoPath ".env"
+    if (Test-Path $envPath) {
+        $webhookLine = Get-Content $envPath | Where-Object { $_ -match '^NOTIFY_WEBHOOK_URL=' }
+        if ($webhookLine) {
+            $webhookUrl = ($webhookLine -replace '^NOTIFY_WEBHOOK_URL=', '').Trim()
+        }
     }
 }
 
@@ -44,7 +59,7 @@ Start-Process -FilePath $pythonExe -ArgumentList "-u", "run_paper.py" -WorkingDi
 Write-WatchdogLog "Started run_paper.py"
 
 if ($webhookUrl) {
-    $body = @{ content = "[WATCHDOG] run_paper.py was niet actief en is automatisch herstart." } | ConvertTo-Json
+    $body = @{ embeds = @(@{ description = "[WATCHDOG] run_paper.py was niet actief en is automatisch herstart."; color = 15105570 }) } | ConvertTo-Json -Depth 5
     try {
         Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 5 | Out-Null
     } catch {

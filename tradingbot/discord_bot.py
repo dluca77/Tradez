@@ -9,7 +9,9 @@ Discord server must be refused, not just discouraged.
 """
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
 import structlog
 
@@ -18,6 +20,61 @@ from tradingbot.performance import compute_performance
 from tradingbot.risk_status import active_risk_gate
 
 log = structlog.get_logger(__name__)
+
+_WEBHOOK_CONFIG_PATH = Path("data/discord_webhooks.json")
+# category -> channel name. Split by concern so a "just checking the
+# account" glance (trades) doesn't get buried under noisy risk alerts, and
+# vice versa - Isaak's request 2026-08-06.
+_CHANNEL_PLAN = {
+    "trades": "trades",
+    "samenvattingen": "dag-en-week-overzicht",
+    "risico": "risico-meldingen",
+}
+_WEBHOOK_NAME = "Tradez"
+
+
+async def _ensure_channels_and_webhooks(guild) -> dict[str, str]:
+    import discord
+
+    urls: dict[str, str] = {}
+    if _WEBHOOK_CONFIG_PATH.exists():
+        try:
+            urls = json.loads(_WEBHOOK_CONFIG_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            urls = {}
+
+    changed = False
+    for category, channel_name in _CHANNEL_PLAN.items():
+        if urls.get(category):
+            continue  # already provisioned in a previous run - idempotent
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if channel is None:
+            try:
+                channel = await guild.create_text_channel(channel_name)
+                log.info("discord_bot.channel_created", name=channel_name)
+            except discord.Forbidden:
+                log.warning(
+                    "discord_bot.missing_permission",
+                    detail=f"Cannot create #{channel_name} - grant 'Manage Channels' to the bot's role",
+                )
+                continue
+        try:
+            existing = await channel.webhooks()
+            webhook = next((w for w in existing if w.name == _WEBHOOK_NAME), None)
+            if webhook is None:
+                webhook = await channel.create_webhook(name=_WEBHOOK_NAME)
+            urls[category] = webhook.url
+            changed = True
+        except discord.Forbidden:
+            log.warning(
+                "discord_bot.missing_permission",
+                detail=f"Cannot manage webhooks in #{channel_name} - grant 'Manage Webhooks' to the bot's role",
+            )
+
+    if changed:
+        _WEBHOOK_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _WEBHOOK_CONFIG_PATH.write_text(json.dumps(urls, indent=2))
+    return urls
 
 
 async def run_discord_bot(controller: AutonomousTradingController) -> None:
@@ -145,6 +202,15 @@ async def _run(controller: AutonomousTradingController) -> None:
         for guild in client.guilds:
             tree.copy_global_to(guild=guild)
             await tree.sync(guild=guild)
+
+        if client.guilds:
+            # Single-owner bot in one server - the first (only) guild is
+            # where the dedicated channels/webhooks live.
+            urls = await _ensure_channels_and_webhooks(client.guilds[0])
+            if urls:
+                controller.notifications.set_category_webhooks(urls)
+                log.info("discord_bot.category_webhooks_ready", categories=list(urls.keys()))
+
         log.info("discord_bot.ready", user=str(client.user), guilds=[g.name for g in client.guilds])
 
     await client.start(token)

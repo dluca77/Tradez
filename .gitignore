@@ -10,3 +10,4 @@ hyperopt_results.txt
 hyperopt_last_run.txt
 hyperopt_last_run_err.txt
 run_paper.lock
+data/discord_webhooks.json

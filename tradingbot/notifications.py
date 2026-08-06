@@ -22,32 +22,45 @@ class NotificationService:
         self.enabled = enabled
         self.channel = channel
         self.webhook_url = webhook_url
+        # Per-category Discord webhook URLs (e.g. "trades" -> its own
+        # channel's webhook), populated later by discord_bot.py once it has
+        # created/found the dedicated channels - empty until then, in which
+        # case every category just falls back to the single webhook_url
+        # above, so notifications work identically before the bot ever
+        # connects.
+        self.category_webhooks: dict[str, str] = {}
+
+    def set_category_webhooks(self, mapping: dict[str, str]) -> None:
+        self.category_webhooks = dict(mapping)
 
     def _dispatch(
         self,
         level: str,
         message: str,
         *,
+        category: str | None = None,
         color: int | None = None,
         title: str | None = None,
         fields: list[tuple[str, str]] | None = None,
     ) -> None:
         if not self.enabled:
             return
-        getattr(log, level, log.info)("notification", message=message, channel=self.channel)
+        getattr(log, level, log.info)("notification", message=message, channel=self.channel, category=category)
 
         if self.channel in ("discord", "slack") and self.webhook_url:
-            self._post_webhook(level, message, color=color, title=title, fields=fields)
+            self._post_webhook(level, message, category=category, color=color, title=title, fields=fields)
 
     def _post_webhook(
         self,
         level: str,
         message: str,
         *,
+        category: str | None = None,
         color: int | None = None,
         title: str | None = None,
         fields: list[tuple[str, str]] | None = None,
     ) -> None:
+        target_url = self.category_webhooks.get(category, self.webhook_url) if category else self.webhook_url
         if self.channel == "discord":
             # Embeds instead of plain content - a colored left border reads
             # info/warning/error at a glance, and structured fields (e.g.
@@ -63,45 +76,46 @@ class NotificationService:
             prefix = {"error": "\U0001F6A8 ", "warning": "⚠️ ", "info": ""}.get(level, "")
             payload = {"text": f"{prefix}{message}"}
         try:
-            httpx.post(self.webhook_url, json=payload, timeout=5.0)
+            httpx.post(target_url, json=payload, timeout=5.0)
         except Exception as exc:  # noqa: BLE001
             # A failed notification must never take down the trading loop —
             # log it locally and move on, the trade itself already happened.
-            log.warning("notification.webhook_failed", channel=self.channel, detail=str(exc))
+            log.warning("notification.webhook_failed", channel=self.channel, category=category, detail=str(exc))
 
     def trade_opened(self, instrument: str, direction: str, confidence: float) -> None:
-        self._dispatch("info", f"Opened {direction} {instrument} (confidence {confidence:.0f})")
+        self._dispatch("info", f"Opened {direction} {instrument} (confidence {confidence:.0f})", category="trades")
 
     def trade_closed(self, instrument: str, pnl: float, r_multiple: float) -> None:
         icon = "✅" if pnl >= 0 else "\U0001F53B"  # green checkmark / red down-triangle
-        self._dispatch("info", f"{icon} Closed {instrument}: {pnl:+.2f} EUR", color=_GREEN if pnl >= 0 else _RED)
+        self._dispatch("info", f"{icon} Closed {instrument}: {pnl:+.2f} EUR", category="trades", color=_GREEN if pnl >= 0 else _RED)
 
     def large_move(self, instrument: str, pnl: float) -> None:
-        self._dispatch("warning", f"Large move on {instrument}: {pnl:+.2f}")
+        self._dispatch("warning", f"Large move on {instrument}: {pnl:+.2f}", category="risico")
 
     def safety_stop(self, reason: str) -> None:
-        self._dispatch("error", f"Safety stop triggered: {reason}")
+        self._dispatch("error", f"Safety stop triggered: {reason}", category="risico")
 
     def broker_issue(self, detail: str) -> None:
-        self._dispatch("error", f"Broker issue: {detail}")
+        self._dispatch("error", f"Broker issue: {detail}", category="risico")
 
     def risk_limit_hit(self, limit: str) -> None:
-        self._dispatch("warning", f"Risk limit reached: {limit}")
+        self._dispatch("warning", f"Risk limit reached: {limit}", category="risico")
 
     def bot_paused(self, reason: str) -> None:
-        self._dispatch("warning", f"Bot paused: {reason}")
+        self._dispatch("warning", f"Bot paused: {reason}", category="risico")
 
     def unexpected_error(self, detail: str) -> None:
-        self._dispatch("error", f"Unexpected error: {detail}")
+        self._dispatch("error", f"Unexpected error: {detail}", category="risico")
 
     def daily_summary(self, pnl: float, win_rate: float, trades: int, profit_factor: float) -> None:
         if trades == 0:
-            self._dispatch("info", "Geen trades vandaag", title="\U0001F4CA Dagafsluiting")
+            self._dispatch("info", "Geen trades vandaag", category="samenvattingen", title="\U0001F4CA Dagafsluiting")
             return
         pf_label = "inf" if profit_factor == float("inf") else f"{profit_factor:.2f}"
         self._dispatch(
             "info",
             "Resultaat van de afgelopen dag",
+            category="samenvattingen",
             title="\U0001F4CA Dagafsluiting",
             color=_GREEN if pnl >= 0 else _RED,
             fields=[
@@ -114,12 +128,13 @@ class NotificationService:
 
     def weekly_summary(self, pnl: float, win_rate: float, trades: int, profit_factor: float) -> None:
         if trades == 0:
-            self._dispatch("info", "Geen trades deze week", title="\U0001F5D3️ Weekafsluiting")
+            self._dispatch("info", "Geen trades deze week", category="samenvattingen", title="\U0001F5D3️ Weekafsluiting")
             return
         pf_label = "inf" if profit_factor == float("inf") else f"{profit_factor:.2f}"
         self._dispatch(
             "info",
             "Resultaat van de afgelopen week",
+            category="samenvattingen",
             title="\U0001F5D3️ Weekafsluiting",
             color=_GREEN if pnl >= 0 else _RED,
             fields=[
