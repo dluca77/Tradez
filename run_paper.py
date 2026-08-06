@@ -16,6 +16,7 @@ from tradingbot.broker.factory import create_broker
 from tradingbot.config import load_config
 from tradingbot.controller import AutonomousTradingController
 from tradingbot.dashboard.app import create_app
+from tradingbot.discord_bot import run_discord_bot
 from tradingbot.logging_config import configure_logging
 
 # Single-instance guard. A manual restart racing the watchdog's periodic
@@ -58,6 +59,10 @@ async def main() -> None:
     controller_task = asyncio.create_task(
         controller.run_forever(cfg.get("scanning", "scan_interval_seconds", default=15))
     )
+    # No-ops (logs and returns) if DISCORD_BOT_TOKEN/DISCORD_OWNER_ID aren't
+    # set in .env - the interactive bot is optional, unlike the trade
+    # webhook notifications.
+    discord_bot_task = asyncio.create_task(run_discord_bot(controller))
 
     print(f"Dashboard running at http://{host}:{port}  (mode={cfg.mode}, live_trading_enabled={cfg.live_trading_enabled})")
     print(f"Broker: {cfg.get('broker', 'name', default='mock')}")
@@ -70,7 +75,7 @@ async def main() -> None:
         await broker.connect()
         account = await broker.get_account_info()
         print(f"Connected account balance: {account.balance:.2f} {account.currency} — VERIFY this is your intended (demo) account before leaving this running.")
-    await asyncio.gather(server_task, controller_task)
+    await asyncio.gather(server_task, controller_task, discord_bot_task)
 
 
 if __name__ == "__main__":
