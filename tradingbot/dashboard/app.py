@@ -148,6 +148,12 @@ TEMPLATE = """<!doctype html>
   .gate-error {{ background: #3a2020; color: #ff6b6b; border: 1px solid #4a2828; }}
   .gate-warn {{ background: #3a2f1d; color: #f0a93d; border: 1px solid #4a3a28; }}
   .gate-lock {{ background: #1e2a3a; color: #6fb3ff; border: 1px solid #28384a; }}
+  .hero {{ margin: 4px 0 16px; }}
+  .hero-label {{ font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #7d8896; font-weight: 600; }}
+  .hero-value {{ font-size: 2.6rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }}
+  .hero-delta {{ font-size: .95rem; font-weight: 600; margin-top: 2px; }}
+  @media (max-width: 380px) {{ .hero-value {{ font-size: 2.1rem; }} }}
+  .sparkline {{ width: 100%; height: 28px; display: block; margin-top: 6px; }}
 </style></head>
 <body>
 
@@ -156,6 +162,12 @@ TEMPLATE = """<!doctype html>
   <span class="pill {kill_pill_class}">{kill_label}</span>
 </h1>
 <div class="subtitle">Laatst bijgewerkt: automatisch elke 10 sec &middot; ververs handmatig voor de nieuwste stand</div>
+
+<div class="hero">
+  <div class="hero-label">Equity</div>
+  <div class="hero-value {equity_class}">&euro;{equity:,.2f}</div>
+  <div class="hero-delta {pnl_class}">{pnl_sign}&euro;{total_pnl_abs:,.2f} totaal ({pnl_sign}{total_pnl_pct:.1f}%)</div>
+</div>
 {risk_gate_banner}
 
 <section>
@@ -199,6 +211,7 @@ TEMPLATE = """<!doctype html>
       <div class="label">Totale winst/verlies</div>
       <div class="value {pnl_class}">{pnl_sign}&euro;{total_pnl_abs:,.2f}</div>
       <div class="sub {pnl_class}">{pnl_sign}{total_pnl_pct:.3f}% van startkapitaal</div>
+      <svg class="sparkline" id="pnl-sparkline"></svg>
     </div>
     <div class="card">
       <div class="label">Profit factor</div>
@@ -474,11 +487,43 @@ function drawEquityCurve(points) {{
   wrap.insertBefore(svg, tooltip);
 }}
 
+function drawSparkline(svgId, points) {{
+  const svg = document.getElementById(svgId);
+  if (!svg || !points || points.length < 2) return;
+  const width = svg.clientWidth || 200;
+  const height = 28;
+  svg.setAttribute('viewBox', `0 0 ${{width}} ${{height}}`);
+  svg.innerHTML = '';
+
+  // Sample down to ~12 points - a sparkline shows the shape of the trend
+  // at a glance, not the detail (that's what the full chart is for).
+  const n = Math.min(points.length, 12);
+  const step = (points.length - 1) / (n - 1);
+  const sampled = [];
+  for (let i = 0; i < n; i++) sampled.push(points[Math.round(i * step)]);
+  const values = sampled.map(p => p.cum_pnl);
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const range = (hi - lo) || 1;
+  const x = i => (i / (n - 1)) * width;
+  const y = v => height - 2 - ((v - lo) / range) * (height - 4);
+  const color = values[values.length - 1] >= 0 ? '#3ddc84' : '#ff6b6b';
+
+  let d = '';
+  sampled.forEach((p, i) => {{ d += (i === 0 ? 'M' : 'L') + x(i) + ',' + y(p.cum_pnl) + ' '; }});
+  svg.appendChild(svgEl('path', {{d: d.trim(), fill: 'none', stroke: '#4a5468', 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}}));
+
+  // last segment rides in the accent/status color - "here's where we are now"
+  const lastSeg = `M${{x(n - 2)}},${{y(values[n - 2])}} L${{x(n - 1)}},${{y(values[n - 1])}}`;
+  svg.appendChild(svgEl('path', {{d: lastSeg, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round'}}));
+  svg.appendChild(svgEl('circle', {{cx: x(n - 1), cy: y(values[n - 1]), r: 2.5, fill: color}}));
+}}
+
 async function loadEquityCurve() {{
   try {{
     const res = await fetch('/api/equity_curve');
     const points = await res.json();
     drawEquityCurve(points);
+    drawSparkline('pnl-sparkline', points);
   }} catch (e) {{ /* ignore, section just stays empty */ }}
 }}
 loadEquityCurve();
