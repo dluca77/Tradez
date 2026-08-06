@@ -42,11 +42,13 @@ class NotificationService:
         self.channel = channel
         self.webhook_url = webhook_url
         # Per-category Discord webhook URLs (e.g. "trades" -> its own
-        # channel's webhook), populated later by discord_bot.py once it has
-        # created/found the dedicated channels - empty until then, in which
-        # case every category just falls back to the single webhook_url
-        # above, so notifications work identically before the bot ever
-        # connects.
+        # channel's webhook). controller.py loads these synchronously at
+        # construction (notifications.load_category_webhooks()) from what
+        # discord_bot.py persisted on a previous run, and the live bot
+        # refreshes them again once it reconnects. webhook_url above is
+        # only a last-resort fallback for a category with no entry here -
+        # controller.py passes "" for it by design (Isaak's call
+        # 2026-08-06: stop using the old catch-all webhook entirely).
         self.category_webhooks: dict[str, str] = {}
 
     def set_category_webhooks(self, mapping: dict[str, str]) -> None:
@@ -66,7 +68,14 @@ class NotificationService:
             return
         getattr(log, level, log.info)("notification", message=message, channel=self.channel, category=category)
 
-        if self.channel in ("discord", "slack") and self.webhook_url:
+        # Gate on whether there's ANY viable target - self.webhook_url is
+        # now often "" by design (controller.py no longer sets it), so
+        # gating on it alone silently dropped every message even when a
+        # perfectly good category_webhooks entry existed. Bug observed
+        # live 2026-08-06: zero Discord messages sent since the restart
+        # that introduced the empty webhook_url default.
+        has_target = self.webhook_url or (category and self.category_webhooks.get(category))
+        if self.channel in ("discord", "slack") and has_target:
             self._post_webhook(level, message, category=category, color=color, title=title, fields=fields)
 
     def _post_webhook(
