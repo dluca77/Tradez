@@ -35,6 +35,7 @@ class RiskConfig:
     martingale_forbidden: bool
     daily_profit_lock_min_confidence: float = 90.0
     max_instrument_daily_loss_pct: float = 1.0
+    daily_loss_limit_min_confidence: float = 95.0
 
 
 @dataclass

@@ -72,17 +72,30 @@ def test_no_martingale_risk_decreases_after_losses():
     assert after_losses.risk_pct < normal.risk_pct
 
 
-def test_daily_loss_limit_blocks_trading():
+def test_daily_loss_limit_blocks_trading_below_raised_bar():
     cfg = _cfg()
     mgr = DynamicRiskManager(cfg)
     state = _state(equity=10_000)
     equity_after_loss = 10_000 * (1 - cfg.max_daily_loss_pct - 0.001)
     decision = mgr.evaluate(
-        confidence=95, equity=equity_after_loss, state=state, open_positions_count=0,
+        confidence=80, equity=equity_after_loss, state=state, open_positions_count=0,
         total_open_risk_pct=0.0, correlation_penalty=1.0, volatility_factor=1.0, spread_factor=1.0,
     )
     assert decision.blocked
     assert decision.block_reason == "daily_loss_limit"
+
+
+def test_daily_loss_limit_allows_confidence_at_or_above_raised_bar():
+    cfg = _cfg()
+    mgr = DynamicRiskManager(cfg)
+    state = _state(equity=10_000)
+    equity_after_loss = 10_000 * (1 - cfg.max_daily_loss_pct - 0.001)
+    decision = mgr.evaluate(
+        confidence=cfg.daily_loss_limit_min_confidence, equity=equity_after_loss, state=state,
+        open_positions_count=0, total_open_risk_pct=0.0, correlation_penalty=1.0,
+        volatility_factor=1.0, spread_factor=1.0,
+    )
+    assert not decision.blocked
 
 
 def test_max_concurrent_positions_blocks():

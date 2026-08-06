@@ -85,9 +85,24 @@ class DynamicRiskManager:
         if month_dd >= self.cfg.max_monthly_drawdown_pct:
             return RiskDecision(0.0, [f"monthly drawdown {month_dd:.2%} >= limit"], blocked=True, block_reason="max_drawdown")
 
+        # Same raised-bar treatment as daily_profit_lock below, but
+        # deliberately stricter (95 vs 90) - Isaak's call, 2026-08-06.
+        # Trading on AFTER a loss limit is structurally closer to chasing
+        # losses than the profit-lock case (trading on after a gain), so
+        # the bar to still be let through should be higher, not just equal.
         day_pnl_pct = (equity - state.day_start_equity) / state.day_start_equity if state.day_start_equity else 0.0
+        if day_pnl_pct <= -self.cfg.max_daily_loss_pct and confidence < self.cfg.daily_loss_limit_min_confidence:
+            return RiskDecision(
+                0.0,
+                [f"daily loss {day_pnl_pct:.2%} hit limit, only confidence >= "
+                 f"{self.cfg.daily_loss_limit_min_confidence:.0f} still allowed"],
+                blocked=True, block_reason="daily_loss_limit",
+            )
         if day_pnl_pct <= -self.cfg.max_daily_loss_pct:
-            return RiskDecision(0.0, [f"daily loss {day_pnl_pct:.2%} hit limit"], blocked=True, block_reason="daily_loss_limit")
+            reasons.append(
+                f"daily loss {day_pnl_pct:.2%} hit limit, but confidence "
+                f"{confidence:.1f} cleared the raised bar -> still allowed"
+            )
 
         # Account-wide daily_loss_limit above only trips at -2% overall - one
         # bad instrument (e.g. -0.44% of equity on XAUUSD alone in a few
