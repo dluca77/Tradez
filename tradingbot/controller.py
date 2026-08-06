@@ -6,7 +6,6 @@ path against a real broker implementation).
 from __future__ import annotations
 
 import asyncio
-import os
 from datetime import datetime, timedelta
 
 import structlog
@@ -20,7 +19,7 @@ from tradingbot.database import Database
 from tradingbot.execution import OrderExecutionEngine
 from tradingbot.models import Direction
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
-from tradingbot.notifications import NotificationService
+from tradingbot.notifications import NotificationService, load_category_webhooks
 from tradingbot.optimization import SelfOptimizationModule
 from tradingbot.performance import (
     compute_performance,
@@ -52,13 +51,20 @@ class AutonomousTradingController:
         self.position_manager = PositionManagementEngine(broker, max_hold=timedelta(hours=1))
         self.safety = SafetyModule(self.db, cfg.risk.max_monthly_drawdown_pct)
         self.recovery = RecoveryService(broker, self.db)
+        # The old single catch-all NOTIFY_WEBHOOK_URL posted to a different
+        # (wrong, from Isaak's perspective) Discord server than the one the
+        # interactive bot lives in - Isaak's call 2026-08-06: stop using it
+        # entirely, route everything through the bot's own per-category
+        # channels instead. Loaded synchronously here (not just set later by
+        # the async bot on connect) so even the very first notification of
+        # this run already goes to the right place, using whatever the bot
+        # persisted on a previous run.
         self.notifications = NotificationService(
             enabled=cfg.get("notifications", "enabled", default=True),
             channel=cfg.get("notifications", "channel", default="log"),
-            # Webhook URLs are live credentials - sourced from the env var,
-            # never from config.yaml (which is committed to the repo).
-            webhook_url=os.environ.get("NOTIFY_WEBHOOK_URL", ""),
+            webhook_url="",
         )
+        self.notifications.set_category_webhooks(load_category_webhooks())
         self.optimizer = SelfOptimizationModule(self.db, cfg.get("optimization", "min_sample_size", default=30))
         self.permanently_disabled_strategies = set(
             cfg.get("optimization", "permanently_disabled_strategies", default=[])

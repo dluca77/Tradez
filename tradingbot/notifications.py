@@ -2,6 +2,9 @@
 requiring them to watch the bot."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import httpx
 import structlog
 
@@ -15,6 +18,22 @@ _RED = 0xFF6B6B
 _ORANGE = 0xF0A93D
 _BLUE = 0x6FB3FF
 _LEVEL_COLORS = {"error": _RED, "warning": _ORANGE, "info": _BLUE}
+
+CATEGORY_WEBHOOKS_PATH = Path("data/discord_webhooks.json")
+
+
+def load_category_webhooks(path: Path = CATEGORY_WEBHOOKS_PATH) -> dict[str, str]:
+    # Written by discord_bot.py once it has created/found the per-category
+    # channels+webhooks; loaded synchronously here (not awaited from the
+    # async bot) so the very first notification of a run already goes to
+    # the right channel instead of an old catch-all webhook - persists
+    # across restarts, no need to wait for the bot to reconnect each time.
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 class NotificationService:

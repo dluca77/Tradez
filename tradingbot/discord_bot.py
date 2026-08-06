@@ -11,17 +11,16 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
 import structlog
 
 from tradingbot.controller import AutonomousTradingController
+from tradingbot.notifications import CATEGORY_WEBHOOKS_PATH, load_category_webhooks
 from tradingbot.performance import compute_performance
 from tradingbot.risk_status import active_risk_gate
 
 log = structlog.get_logger(__name__)
 
-_WEBHOOK_CONFIG_PATH = Path("data/discord_webhooks.json")
 # category -> channel name. Split by concern so a "just checking the
 # account" glance (trades) doesn't get buried under noisy risk alerts, and
 # vice versa - Isaak's request 2026-08-06.
@@ -36,13 +35,7 @@ _WEBHOOK_NAME = "Tradez"
 async def _ensure_channels_and_webhooks(guild) -> dict[str, str]:
     import discord
 
-    urls: dict[str, str] = {}
-    if _WEBHOOK_CONFIG_PATH.exists():
-        try:
-            urls = json.loads(_WEBHOOK_CONFIG_PATH.read_text())
-        except (json.JSONDecodeError, OSError):
-            urls = {}
-
+    urls: dict[str, str] = load_category_webhooks()
     changed = False
     for category, channel_name in _CHANNEL_PLAN.items():
         if urls.get(category):
@@ -72,8 +65,8 @@ async def _ensure_channels_and_webhooks(guild) -> dict[str, str]:
             )
 
     if changed:
-        _WEBHOOK_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _WEBHOOK_CONFIG_PATH.write_text(json.dumps(urls, indent=2))
+        CATEGORY_WEBHOOKS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CATEGORY_WEBHOOKS_PATH.write_text(json.dumps(urls, indent=2))
     return urls
 
 
