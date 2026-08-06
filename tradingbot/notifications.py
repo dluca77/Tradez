@@ -7,6 +7,15 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
+# Discord embed colors, matching the dashboard's own status palette so the
+# two surfaces read as one system (green/red/orange/blue already used for
+# pos/neg/warn/lock states there).
+_GREEN = 0x3DDC84
+_RED = 0xFF6B6B
+_ORANGE = 0xF0A93D
+_BLUE = 0x6FB3FF
+_LEVEL_COLORS = {"error": _RED, "warning": _ORANGE, "info": _BLUE}
+
 
 class NotificationService:
     def __init__(self, enabled: bool = True, channel: str = "log", webhook_url: str = ""):
@@ -14,21 +23,45 @@ class NotificationService:
         self.channel = channel
         self.webhook_url = webhook_url
 
-    def _dispatch(self, level: str, message: str) -> None:
+    def _dispatch(
+        self,
+        level: str,
+        message: str,
+        *,
+        color: int | None = None,
+        title: str | None = None,
+        fields: list[tuple[str, str]] | None = None,
+    ) -> None:
         if not self.enabled:
             return
         getattr(log, level, log.info)("notification", message=message, channel=self.channel)
 
         if self.channel in ("discord", "slack") and self.webhook_url:
-            self._post_webhook(level, message)
+            self._post_webhook(level, message, color=color, title=title, fields=fields)
 
-    def _post_webhook(self, level: str, message: str) -> None:
-        prefix = {"error": "\U0001F6A8 ", "warning": "⚠️ ", "info": ""}.get(level, "")
-        text = f"{prefix}{message}"
-        # Discord and Slack incoming webhooks expect different JSON shapes
-        # ({"content": ...} vs {"text": ...}) but both accept a plain POST
-        # with no auth beyond the URL itself, so one code path covers both.
-        payload = {"content": text} if self.channel == "discord" else {"text": text}
+    def _post_webhook(
+        self,
+        level: str,
+        message: str,
+        *,
+        color: int | None = None,
+        title: str | None = None,
+        fields: list[tuple[str, str]] | None = None,
+    ) -> None:
+        if self.channel == "discord":
+            # Embeds instead of plain content - a colored left border reads
+            # info/warning/error at a glance, and structured fields (e.g.
+            # the daily summary's pnl/win-rate/trades/profit-factor) are
+            # scannable instead of one run-on sentence.
+            embed: dict = {"description": message, "color": color if color is not None else _LEVEL_COLORS.get(level, _BLUE)}
+            if title:
+                embed["title"] = title
+            if fields:
+                embed["fields"] = [{"name": name, "value": value, "inline": True} for name, value in fields]
+            payload = {"embeds": [embed]}
+        else:
+            prefix = {"error": "\U0001F6A8 ", "warning": "⚠️ ", "info": ""}.get(level, "")
+            payload = {"text": f"{prefix}{message}"}
         try:
             httpx.post(self.webhook_url, json=payload, timeout=5.0)
         except Exception as exc:  # noqa: BLE001
@@ -41,7 +74,7 @@ class NotificationService:
 
     def trade_closed(self, instrument: str, pnl: float, r_multiple: float) -> None:
         icon = "✅" if pnl >= 0 else "\U0001F53B"  # green checkmark / red down-triangle
-        self._dispatch("info", f"{icon} Closed {instrument}: {pnl:+.2f} EUR")
+        self._dispatch("info", f"{icon} Closed {instrument}: {pnl:+.2f} EUR", color=_GREEN if pnl >= 0 else _RED)
 
     def large_move(self, instrument: str, pnl: float) -> None:
         self._dispatch("warning", f"Large move on {instrument}: {pnl:+.2f}")
@@ -63,12 +96,36 @@ class NotificationService:
 
     def daily_summary(self, pnl: float, win_rate: float, trades: int, profit_factor: float) -> None:
         if trades == 0:
-            self._dispatch("info", "Dagafsluiting: geen trades vandaag")
+            self._dispatch("info", "Geen trades vandaag", title="\U0001F4CA Dagafsluiting")
             return
-        icon = "✅" if pnl >= 0 else "\U0001F53B"
         pf_label = "inf" if profit_factor == float("inf") else f"{profit_factor:.2f}"
         self._dispatch(
             "info",
-            f"{icon} Dagafsluiting: {pnl:+.2f} EUR over {trades} trades "
-            f"(win rate {win_rate * 100:.0f}%, profit factor {pf_label})",
+            "Resultaat van de afgelopen dag",
+            title="\U0001F4CA Dagafsluiting",
+            color=_GREEN if pnl >= 0 else _RED,
+            fields=[
+                ("Winst/verlies", f"{pnl:+.2f} EUR"),
+                ("Win rate", f"{win_rate * 100:.0f}%"),
+                ("Trades", str(trades)),
+                ("Profit factor", pf_label),
+            ],
+        )
+
+    def weekly_summary(self, pnl: float, win_rate: float, trades: int, profit_factor: float) -> None:
+        if trades == 0:
+            self._dispatch("info", "Geen trades deze week", title="\U0001F5D3️ Weekafsluiting")
+            return
+        pf_label = "inf" if profit_factor == float("inf") else f"{profit_factor:.2f}"
+        self._dispatch(
+            "info",
+            "Resultaat van de afgelopen week",
+            title="\U0001F5D3️ Weekafsluiting",
+            color=_GREEN if pnl >= 0 else _RED,
+            fields=[
+                ("Winst/verlies", f"{pnl:+.2f} EUR"),
+                ("Win rate", f"{win_rate * 100:.0f}%"),
+                ("Trades", str(trades)),
+                ("Profit factor", pf_label),
+            ],
         )

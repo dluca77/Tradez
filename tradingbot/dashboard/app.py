@@ -141,6 +141,13 @@ TEMPLATE = """<!doctype html>
   .bar-sub {{ font-size: .68rem; color: #7d8896; }}
   .bar-section-title {{ font-size: .78rem; color: #9aa4b2; margin: 14px 0 4px; }}
   .bar-section-title:first-child {{ margin-top: 0; }}
+  .gate-banner {{
+    padding: 10px 14px; border-radius: 10px; font-size: .85rem; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px; line-height: 1.4;
+  }}
+  .gate-error {{ background: #3a2020; color: #ff6b6b; border: 1px solid #4a2828; }}
+  .gate-warn {{ background: #3a2f1d; color: #f0a93d; border: 1px solid #4a3a28; }}
+  .gate-lock {{ background: #1e2a3a; color: #6fb3ff; border: 1px solid #28384a; }}
 </style></head>
 <body>
 
@@ -149,6 +156,7 @@ TEMPLATE = """<!doctype html>
   <span class="pill {kill_pill_class}">{kill_label}</span>
 </h1>
 <div class="subtitle">Laatst bijgewerkt: automatisch elke 10 sec &middot; ververs handmatig voor de nieuwste stand</div>
+{risk_gate_banner}
 
 <section>
   <div class="section-title">Account</div>
@@ -727,6 +735,55 @@ def _direction_label(direction_value: str) -> tuple[str, str]:
     return "short", "Short"
 
 
+def _active_risk_gate(controller: AutonomousTradingController, equity: float) -> dict | None:
+    # Mirrors risk_manager.evaluate()'s account-wide checks (same order,
+    # same thresholds) purely to report current status - never blocks
+    # anything itself. Added because Isaak had to ask multiple times
+    # today whether a gate was actually active; this puts the answer on
+    # the dashboard instead.
+    state = controller.state
+    cfg = controller.cfg.risk
+    now = datetime.utcnow()
+
+    if state.kill_switch:
+        return {"icon": "\U0001F6A8", "text": "NOODSTOP ACTIEF", "cls": "gate-error"}
+
+    if state.cooldown_until and now < state.cooldown_until:
+        until = state.cooldown_until.strftime("%H:%M")
+        return {"icon": "⏸", "text": f"Cooldown na verliezen op rij, actief tot {until} UTC", "cls": "gate-warn"}
+
+    month_dd = (state.peak_equity - equity) / state.peak_equity if state.peak_equity else 0.0
+    if month_dd >= cfg.max_monthly_drawdown_pct:
+        return {"icon": "\U0001F6A8", "text": f"Maandelijkse drawdown-limiet geraakt ({month_dd:.1%})", "cls": "gate-error"}
+
+    day_pnl_pct = (equity - state.day_start_equity) / state.day_start_equity if state.day_start_equity else 0.0
+    if day_pnl_pct <= -cfg.max_daily_loss_pct:
+        return {
+            "icon": "\U0001F512",
+            "text": f"Dagverlieslimiet geraakt ({day_pnl_pct:.1%}) — alleen confidence ≥{cfg.daily_loss_limit_min_confidence:.0f} nog toegestaan",
+            "cls": "gate-warn",
+        }
+
+    week_pnl_pct = (equity - state.week_start_equity) / state.week_start_equity if state.week_start_equity else 0.0
+    if week_pnl_pct <= -cfg.max_weekly_loss_pct:
+        return {"icon": "\U0001F512", "text": f"Weekverlieslimiet geraakt ({week_pnl_pct:.1%})", "cls": "gate-error"}
+
+    day_peak_gain = (state.day_peak_equity - state.day_start_equity) / state.day_start_equity if state.day_start_equity else 0.0
+    if day_peak_gain > 0:
+        giveback = (state.day_peak_equity - equity) / (state.day_peak_equity - state.day_start_equity)
+        if giveback >= cfg.daily_profit_giveback_pct and day_peak_gain >= cfg.daily_profit_soft_lock_pct:
+            return {"icon": "\U0001F512", "text": f"Te veel van dagwinst teruggegeven ({giveback:.0%}) — dag geblokkeerd", "cls": "gate-warn"}
+
+    if day_pnl_pct >= cfg.daily_profit_lock_pct:
+        return {
+            "icon": "\U0001F3AF",
+            "text": f"Dagdoel gehaald ({day_pnl_pct:.1%}) — alleen confidence ≥{cfg.daily_profit_lock_min_confidence:.0f} nog toegestaan",
+            "cls": "gate-lock",
+        }
+
+    return None
+
+
 def _next_step_text(r_multiple: float, breakeven_moved: bool, trailing_active: bool) -> str:
     if r_multiple < 1.0:
         return f"Break-even (stop naar instap) bij 1R &mdash; nu op {r_multiple:.2f}R"
@@ -770,6 +827,12 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
         max_hold = controller.position_manager.max_hold
 
         open_trade_meta = {row["id"]: row for row in controller.db.fetch_open_trades()}
+
+        gate = _active_risk_gate(controller, account.equity)
+        risk_gate_banner = (
+            f'<div class="gate-banner {gate["cls"]}"><span>{gate["icon"]}</span><span>{gate["text"]}</span></div>'
+            if gate else ""
+        )
 
         equity_change_pct = ((account.equity - account.balance) / account.balance * 100) if account.balance else 0.0
         total_pnl_pct = (perf.total_pnl / starting_balance * 100) if starting_balance else 0.0
@@ -884,6 +947,7 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
             positions_json=json.dumps(positions_for_js),
             instrument_bars=_bar_rows(perf.by_instrument),
             strategy_bars=_bar_rows(perf.by_strategy),
+            risk_gate_banner=risk_gate_banner,
         )
 
     @app.get("/geschiedenis", response_class=HTMLResponse)

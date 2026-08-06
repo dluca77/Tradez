@@ -96,13 +96,7 @@ def equity_curve(db: Database) -> list[dict]:
     return points
 
 
-def daily_pnl_summary(db: Database, day_date) -> dict:
-    day_start = f"{day_date.isoformat()}T00:00:00"
-    day_end = f"{day_date.isoformat()}T23:59:59.999999"
-    rows = [
-        r for r in _real_trades(db.fetch_closed_trades())
-        if r["opened_at"] and day_start <= r["opened_at"] <= day_end
-    ]
+def _pnl_summary(rows: list) -> dict:
     if not rows:
         return {"total_pnl": 0.0, "win_rate": 0.0, "trades": 0, "profit_factor": 0.0}
 
@@ -118,6 +112,30 @@ def daily_pnl_summary(db: Database, day_date) -> dict:
         "trades": len(rows),
         "profit_factor": pf,
     }
+
+
+def daily_pnl_summary(db: Database, day_date) -> dict:
+    day_start = f"{day_date.isoformat()}T00:00:00"
+    day_end = f"{day_date.isoformat()}T23:59:59.999999"
+    rows = [
+        r for r in _real_trades(db.fetch_closed_trades())
+        if r["opened_at"] and day_start <= r["opened_at"] <= day_end
+    ]
+    return _pnl_summary(rows)
+
+
+def weekly_pnl_summary(db: Database, iso_year: int, iso_week: int) -> dict:
+    from datetime import date
+
+    week_start = date.fromisocalendar(iso_year, iso_week, 1)  # Monday
+    week_end = date.fromisocalendar(iso_year, iso_week, 7)  # Sunday
+    range_start = f"{week_start.isoformat()}T00:00:00"
+    range_end = f"{week_end.isoformat()}T23:59:59.999999"
+    rows = [
+        r for r in _real_trades(db.fetch_closed_trades())
+        if r["opened_at"] and range_start <= r["opened_at"] <= range_end
+    ]
+    return _pnl_summary(rows)
 
 
 def historical_winrates(db: Database) -> dict[str, float]:

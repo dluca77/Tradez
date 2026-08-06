@@ -27,6 +27,7 @@ from tradingbot.performance import (
     daily_pnl_summary,
     historical_winrates,
     per_instrument_pnl_today,
+    weekly_pnl_summary,
 )
 from tradingbot.position_manager import PositionManagementEngine
 from tradingbot.position_sizing import calculate_position_size
@@ -260,8 +261,14 @@ class AutonomousTradingController:
                 trades=summary["trades"], profit_factor=summary["profit_factor"],
             )
         week_rolled = now.isocalendar()[:2] != self._week_key
+        previous_week_key = self._week_key
         if week_rolled:
             self._week_key = now.isocalendar()[:2]
+            week_summary = weekly_pnl_summary(self.db, previous_week_key[0], previous_week_key[1])
+            self.notifications.weekly_summary(
+                pnl=week_summary["total_pnl"], win_rate=week_summary["win_rate"],
+                trades=week_summary["trades"], profit_factor=week_summary["profit_factor"],
+            )
 
         if day_rolled or week_rolled:
             self._notified_risk_limits.clear()
