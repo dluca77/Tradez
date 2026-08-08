@@ -119,7 +119,6 @@ class AutonomousTradingController:
             day_peak_equity=cfg.starting_balance,
         )
         self._positions_meta: dict[str, dict] = {}  # position_id -> signal metadata
-        self._known_position_ids: set[str] = set()
         self.running = False
         self.paused = False
         self._day_date = datetime.utcnow().date()
@@ -344,11 +343,20 @@ class AutonomousTradingController:
         # such a trade is simply lost: never recorded as closed, missing
         # from "recent closed trades", and not counted for win-rate/streak
         # tracking.
+        #
+        # Diffed against the DB's own open rows (not an in-memory "known
+        # ids" set from the previous poll) — a position that both opens
+        # and fully closes between two ~15s polls (observed 2026-08-07:
+        # four positions stopped out 1-15s after opening) never appears in
+        # an in-memory set at all, so it could never be detected as
+        # "vanished" from it. The DB is authoritative and also survives a
+        # bot restart, where an in-memory set would start out empty and
+        # miss anything that closed while the process was down.
         current_ids = {p.id for p in open_positions}
-        vanished_ids = self._known_position_ids - current_ids
+        db_open_ids = {row["id"] for row in self.db.fetch_open_trades()}
+        vanished_ids = db_open_ids - current_ids
         for trade_id in vanished_ids:
             await self._record_vanished_trade(trade_id)
-        self._known_position_ids = current_ids
 
         # 16: manage existing positions first every cycle
         await self._manage_open_positions(open_positions)
