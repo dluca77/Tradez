@@ -30,12 +30,20 @@ instruments:
   # accepted bar), plus tight live Vantage spreads (UK100 ~0.7pts/10909,
   # JPN225ft ~14.25pts/64107). BTCUSD/ETHUSD backtested near/below breakeven
   # (0.99 / 0.96) - not added; crypto also stays off via crypto_enabled below.
+  # 2026-08-10: SPX500, UK100, JPN225 removed based on real live-trading
+  # results, not backtest data - full history since 2026-08-04 showed XAUUSD
+  # (118 trades, +2621.99 EUR, PF 1.18) and NAS100 (103 trades, +546.16 EUR,
+  # PF 1.10) both genuinely profitable live, while SPX500 (69 trades,
+  # -115.38, PF 0.97) was roughly breakeven and JPN225 (98 trades, -821.93,
+  # PF 0.90) and especially UK100 (74 trades, -3956.99, PF 0.56 - see the
+  # cash-open whipsaw pattern documented below under instrument_session_
+  # cooldowns/instrument_strategy_params.UK100) were real net losers.
+  # Isaak's call, an allowed instrument-level restriction per CLAUDE.md (not
+  # a strategy exclusion). Re-add any of these only after fresh evidence
+  # (live results or a new backtest) shows it's actually viable again.
   enabled:
     - XAUUSD
     - NAS100
-    - SPX500
-    - UK100
-    - JPN225
   crypto_enabled: false
 
 # Per-instrument time-of-day skip: the instrument is left out of scanning
