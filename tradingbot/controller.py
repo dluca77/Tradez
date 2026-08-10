@@ -84,6 +84,15 @@ class AutonomousTradingController:
         self.instrument_strategy_params: dict[str, dict[str, dict]] = cfg.get(
             "optimization", "instrument_strategy_params", default={}
         )
+        # Per-instrument time-of-day skip (e.g. sit out a volatile cash-open
+        # window) - distinct from instrument_strategy_params above, which
+        # still lets the strategy trade, just with tuned thresholds. Added
+        # 2026-08-10 after UK100 showed a repeated whipsaw right at London
+        # cash-open across two sessions (2026-08-07, 2026-08-10) - see
+        # config.yaml for the evidence this was based on.
+        self.instrument_session_cooldowns: dict[str, dict] = cfg.get(
+            "instrument_session_cooldowns", default={}
+        )
         self.news_filter = NewsFilter(
             pre_minutes=cfg.get("news", "pre_event_blackout_minutes", default=30),
             post_minutes=cfg.get("news", "post_event_blackout_minutes", default=15),
@@ -376,6 +385,7 @@ class AutonomousTradingController:
                 self.optimizer.state.min_confidence * 0.8,
             ),
             instrument_strategy_params=self.instrument_strategy_params,
+            instrument_session_cooldowns=self.instrument_session_cooldowns,
             db=self.db,
         )
 

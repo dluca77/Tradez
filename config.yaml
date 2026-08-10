@@ -38,6 +38,21 @@ instruments:
     - JPN225
   crypto_enabled: false
 
+# Per-instrument time-of-day skip: the instrument is left out of scanning
+# entirely for the window, distinct from optimization.instrument_strategy_params
+# below (which still lets the strategy trade, just with tuned thresholds).
+# UK100 added 2026-08-10: two live sessions (2026-08-07, 2026-08-10) both
+# showed a whipsaw right at London cash-open (07:00 UTC) - 2-3 stop-outs
+# within minutes as strategies re-entered right after getting stopped out
+# during the open volatility spike. 15-minute window covers both observed
+# clusters (07:00-07:05 and 07:00-07:07) plus buffer. Not backtested/
+# hyperopt-derived, a manual call authorized by Isaak 2026-08-10 - narrow or
+# widen once more sessions show exactly where the volatility settles.
+instrument_session_cooldowns:
+  UK100:
+    start_utc: "07:00"
+    end_utc: "07:15"
+
 timeframes:
   execution: ["M1", "M3", "M5", "M15"]
   context: ["H1", "H4"]
@@ -183,7 +198,25 @@ optimization:
     # regardless of validation), support_resistance (train pf=1.07/326,
     # validation pf=0.75/211) - every one overfit or unreliable, same
     # pattern as NAS100/SPX500. Left entirely at defaults.
-    UK100: {}
+    # 2026-08-10: NOT hyperopt-tuned (unlike the blocks above) - a manual,
+    # evidence-observed widening after two live sessions (2026-08-07,
+    # 2026-08-10) showed a repeated UK100 whipsaw: stop-outs within minutes
+    # of London cash-open (07:00 UTC) across mean_reversion, breakout,
+    # pullback, session_breakout and (08-07 only) trend_following, as the
+    # bot re-entered right after each stop during the open volatility spike.
+    # Widened each affected strategy's stop_atr_mult ~30% over its global
+    # default (base.py) so a normal open-volatility swing doesn't
+    # immediately stop it out. momentum_scalping untouched - its UK100
+    # trades weren't stop-loss losses. Isaak explicitly authorized this
+    # 2026-08-10 despite it not meeting the project's usual hyperopt-backed
+    # bar - revisit with run_hyperopt.py once there's enough live UK100
+    # data to validate properly.
+    UK100:
+      mean_reversion: {stop_atr_mult: 1.3}    # default 1.0
+      breakout: {stop_atr_mult: 1.6}          # default 1.2
+      pullback: {stop_atr_mult: 0.65}         # default 0.5
+      session_breakout: {stop_atr_mult: 1.6}  # default 1.2
+      trend_following: {stop_atr_mult: 2.0}   # default 1.5
     # run_hyperopt.py 2026-08-05, 20 trials each: pullback (train
     # pf=1.31/159 trades, validation pf=0.83/95), breakout_retest (train
     # pf=1.22/187, validation pf=0.99/116), vwap_reversion (train

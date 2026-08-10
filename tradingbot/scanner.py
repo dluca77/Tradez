@@ -17,7 +17,7 @@ from tradingbot.models import Direction, MarketRegime, Signal
 from tradingbot.news_filter import INSTRUMENT_CURRENCIES, NewsFilter
 from tradingbot.position_sizing import MIN_STOP_DISTANCE_PCT
 from tradingbot.regime import detect_regime
-from tradingbot.sessions import session_quality
+from tradingbot.sessions import instrument_cooldown_active, session_quality
 from tradingbot.strategy_selector import generate_signals
 
 
@@ -60,6 +60,7 @@ async def scan_markets(
     historical_winrates: dict[str, float] | None = None,
     min_opportunity_score: float = 65.0,
     instrument_strategy_params: dict[str, dict[str, dict]] | None = None,
+    instrument_session_cooldowns: dict[str, dict] | None = None,
     db=None,
 ) -> list[Candidate]:
     historical_winrates = historical_winrates or {}
@@ -68,6 +69,11 @@ async def scan_markets(
     sess_quality, sess_name = session_quality()
 
     for instrument in instruments:
+        cooldown, cooldown_reason = instrument_cooldown_active(instrument, instrument_session_cooldowns)
+        if cooldown:
+            _log_skip(db, instrument, "session_cooldown", detail=cooldown_reason)
+            continue
+
         currencies = INSTRUMENT_CURRENCIES.get(instrument, [])
         blackout, reason = news_filter.is_blackout(currencies)
         if blackout:

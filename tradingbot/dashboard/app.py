@@ -1091,6 +1091,7 @@ def create_app(controller: AutonomousTradingController) -> FastAPI:
 
         skip_reason_labels = {
             "news_blackout": "nieuws-blackout",
+            "session_cooldown": "sessie-cooldown (tijdvenster overgeslagen)",
             "broker_data_error": "broker gaf geen data",
             "insufficient_bars": "te weinig candles",
             "regime_not_tradeable": "regime niet geschikt om te traden",
