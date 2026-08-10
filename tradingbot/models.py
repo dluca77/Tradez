@@ -1,0 +1,147 @@
+"""Core data models shared across the trading bot."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+
+
+class Direction(str, Enum):
+    LONG = "long"
+    SHORT = "short"
+
+
+class OrderType(str, Enum):
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
+
+
+class MarketRegime(str, Enum):
+    STRONG_UPTREND = "strong_uptrend"
+    STRONG_DOWNTREND = "strong_downtrend"
+    WEAK_TREND = "weak_trend"
+    SIDEWAYS = "sideways"
+    CONSOLIDATION = "consolidation"
+    BREAKOUT = "breakout"
+    HIGH_VOLATILITY = "high_volatility"
+    LOW_VOLATILITY = "low_volatility"
+    LOW_LIQUIDITY = "low_liquidity"
+    NEWS_VOLATILITY = "news_volatility"
+    UNPREDICTABLE = "unpredictable"
+
+
+class StrategyName(str, Enum):
+    TREND_FOLLOWING = "trend_following"
+    MOMENTUM_SCALPING = "momentum_scalping"
+    BREAKOUT = "breakout"
+    BREAKOUT_RETEST = "breakout_retest"
+    PULLBACK = "pullback"
+    MEAN_REVERSION = "mean_reversion"
+    SUPPORT_RESISTANCE = "support_resistance"
+    VWAP_REVERSION = "vwap_reversion"
+    SESSION_BREAKOUT = "session_breakout"
+    VOLATILITY_BREAKOUT = "volatility_breakout"
+    OPENING_RANGE_FVG = "opening_range_fvg"
+
+
+@dataclass
+class Candle:
+    time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float = 0.0
+
+
+@dataclass
+class OpportunityScore:
+    instrument: str
+    score: float
+    regime: MarketRegime
+    reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Signal:
+    instrument: str
+    direction: Direction
+    strategy: StrategyName
+    regime: MarketRegime
+    confidence: float
+    entry_price: float
+    stop_loss: float
+    take_profits: list[float]
+    atr: float
+    reasons: list[str] = field(default_factory=list)
+    expected_reward_r: float = 0.0
+    generated_at: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class RiskDecision:
+    risk_pct: float
+    reasons: list[str] = field(default_factory=list)
+    blocked: bool = False
+    block_reason: str | None = None
+
+
+@dataclass
+class PositionSizeResult:
+    lots_or_units: float
+    risk_amount: float
+    stop_distance: float
+
+
+@dataclass
+class Order:
+    id: str
+    instrument: str
+    direction: Direction
+    order_type: OrderType
+    quantity: float
+    price: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    status: str = "pending"
+    filled_price: float | None = None
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class TakeProfitLevel:
+    price: float
+    close_fraction: float  # fraction of remaining position to close
+    hit: bool = False
+
+
+@dataclass
+class Position:
+    id: str
+    instrument: str
+    direction: Direction
+    entry_price: float
+    quantity: float
+    initial_quantity: float
+    stop_loss: float
+    initial_stop_loss: float
+    take_profit_levels: list[TakeProfitLevel]
+    # Unknown for positions reconciled from the broker rather than opened by
+    # our own signal engine (e.g. on startup recovery) — hence the defaults.
+    strategy: StrategyName | None = None
+    regime_at_entry: MarketRegime | None = None
+    confidence: float = 0.0
+    risk_amount: float = 0.0
+    opened_at: datetime = field(default_factory=datetime.utcnow)
+    breakeven_moved: bool = False
+    trailing_active: bool = False
+    r_multiple_realized: float = 0.0
+    reason: str = ""
+    realized_pnl: float = 0.0  # pnl already banked from partial closes, before the final exit
+    # Authoritative live floating P&L as reported by the broker itself
+    # (e.g. MT5's own `profit` field, which correctly accounts for
+    # contract size, swap, etc). None for brokers/positions where this
+    # isn't available — callers must fall back to a manual estimate.
+    broker_unrealized_pnl: float | None = None

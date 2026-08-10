@@ -1,0 +1,151 @@
+"""Performance Analytics: aggregates closed trades from the database."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from tradingbot.database import Database
+
+# Trades auto-closed by the recovery/reconciliation service (e.g. because the
+# broker/session was restarted mid-trade and the position no longer exists at
+# the broker) are not real trading outcomes — they're bookkeeping artifacts
+# with a forced pnl of 0. Counting them would dilute the win rate and let
+# restarts silently pad the trade count needed for the live-trading gate.
+_ARTIFACT_EXIT_REASONS = {"reconciliation_broker_missing"}
+
+
+def _real_trades(rows):
+    return [r for r in rows if r["exit_reason"] not in _ARTIFACT_EXIT_REASONS]
+
+
+@dataclass
+class PerformanceSummary:
+    total_trades: int
+    win_rate: float
+    total_pnl: float
+    avg_r: float
+    profit_factor: float
+    by_instrument: dict[str, dict]
+    by_strategy: dict[str, dict]
+
+
+def _bucket_stats(rows, key: str) -> dict[str, dict]:
+    buckets: dict[str, list] = {}
+    for row in rows:
+        buckets.setdefault(row[key], []).append(row)
+    out = {}
+    for name, trs in buckets.items():
+        wins = [t for t in trs if (t["pnl"] or 0) > 0]
+        out[name] = {
+            "trades": len(trs),
+            "win_rate": len(wins) / len(trs) if trs else 0.0,
+            "total_pnl": sum((t["pnl"] or 0) for t in trs),
+            "avg_r": sum((t["r_multiple"] or 0) for t in trs) / len(trs) if trs else 0.0,
+        }
+    return out
+
+
+def compute_performance(db: Database) -> PerformanceSummary:
+    rows = _real_trades(db.fetch_closed_trades())
+    if not rows:
+        return PerformanceSummary(0, 0.0, 0.0, 0.0, 0.0, {}, {})
+
+    wins = [r for r in rows if (r["pnl"] or 0) > 0]
+    losses = [r for r in rows if (r["pnl"] or 0) < 0]
+    gross_win = sum((r["pnl"] or 0) for r in wins)
+    gross_loss = abs(sum((r["pnl"] or 0) for r in losses))
+    pf = gross_win / gross_loss if gross_loss > 0 else float("inf") if gross_win > 0 else 0.0
+
+    return PerformanceSummary(
+        total_trades=len(rows),
+        win_rate=len(wins) / len(rows),
+        total_pnl=sum((r["pnl"] or 0) for r in rows),
+        avg_r=sum((r["r_multiple"] or 0) for r in rows) / len(rows),
+        profit_factor=pf,
+        by_instrument=_bucket_stats(rows, "instrument"),
+        by_strategy=_bucket_stats(rows, "strategy"),
+    )
+
+
+def per_instrument_pnl_today(db: Database, day_date) -> dict[str, float]:
+    # Realized pnl only (closed trades) - an open position's unrealized pnl
+    # on that instrument isn't included. A pragmatic simplification: getting
+    # live per-instrument unrealized pnl into this check would need much
+    # more plumbing, and a losing streak that actually trips this cap will
+    # already have real closed losses behind it.
+    rows = _real_trades(db.fetch_closed_trades())
+    day_start = f"{day_date.isoformat()}T00:00:00"
+    out: dict[str, float] = {}
+    for row in rows:
+        if not row["opened_at"] or row["opened_at"] < day_start:
+            continue
+        out[row["instrument"]] = out.get(row["instrument"], 0.0) + (row["pnl"] or 0.0)
+    return out
+
+
+def equity_curve(db: Database) -> list[dict]:
+    """Cumulative realized pnl over time, one point per closed trade in
+    chronological order - the dashboard's equity-curve chart. Realized only
+    (closed_at), same convention as per_instrument_pnl_today/daily_pnl_summary,
+    not a live equity snapshot series (which the bot doesn't persist)."""
+    rows = sorted(_real_trades(db.fetch_closed_trades()), key=lambda r: r["closed_at"] or "")
+    cum = 0.0
+    points = []
+    for r in rows:
+        cum += r["pnl"] or 0.0
+        points.append({"t": r["closed_at"], "cum_pnl": round(cum, 2)})
+    return points
+
+
+def _pnl_summary(rows: list) -> dict:
+    if not rows:
+        return {"total_pnl": 0.0, "win_rate": 0.0, "trades": 0, "profit_factor": 0.0}
+
+    wins = [r for r in rows if (r["pnl"] or 0) > 0]
+    losses = [r for r in rows if (r["pnl"] or 0) < 0]
+    gross_win = sum((r["pnl"] or 0) for r in wins)
+    gross_loss = abs(sum((r["pnl"] or 0) for r in losses))
+    pf = gross_win / gross_loss if gross_loss > 0 else float("inf") if gross_win > 0 else 0.0
+
+    return {
+        "total_pnl": sum((r["pnl"] or 0) for r in rows),
+        "win_rate": len(wins) / len(rows),
+        "trades": len(rows),
+        "profit_factor": pf,
+    }
+
+
+def daily_pnl_summary(db: Database, day_date) -> dict:
+    day_start = f"{day_date.isoformat()}T00:00:00"
+    day_end = f"{day_date.isoformat()}T23:59:59.999999"
+    rows = [
+        r for r in _real_trades(db.fetch_closed_trades())
+        if r["opened_at"] and day_start <= r["opened_at"] <= day_end
+    ]
+    return _pnl_summary(rows)
+
+
+def weekly_pnl_summary(db: Database, iso_year: int, iso_week: int) -> dict:
+    from datetime import date
+
+    week_start = date.fromisocalendar(iso_year, iso_week, 1)  # Monday
+    week_end = date.fromisocalendar(iso_year, iso_week, 7)  # Sunday
+    range_start = f"{week_start.isoformat()}T00:00:00"
+    range_end = f"{week_end.isoformat()}T23:59:59.999999"
+    rows = [
+        r for r in _real_trades(db.fetch_closed_trades())
+        if r["opened_at"] and range_start <= r["opened_at"] <= range_end
+    ]
+    return _pnl_summary(rows)
+
+
+def historical_winrates(db: Database) -> dict[str, float]:
+    rows = _real_trades(db.fetch_closed_trades())
+    buckets: dict[str, list] = {}
+    for row in rows:
+        key = f"{row['instrument']}:{row['strategy']}"
+        buckets.setdefault(key, []).append(row)
+    return {
+        key: sum(1 for r in trs if (r["pnl"] or 0) > 0) / len(trs)
+        for key, trs in buckets.items()
+        if len(trs) >= 5
+    }
